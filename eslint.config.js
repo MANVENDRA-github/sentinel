@@ -9,6 +9,10 @@ export default tseslint.config(
     files: ['**/*.ts'],
     extends: [...tseslint.configs.strict, ...tseslint.configs.stylistic],
     rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
       // Match CLAUDE.md: named exports only (config files are exempted below).
       'no-restricted-syntax': [
         'error',
@@ -23,6 +27,11 @@ export default tseslint.config(
     // Tooling config files conventionally require a default export.
     files: ['**/*.config.ts'],
     rules: { 'no-restricted-syntax': 'off' },
+  },
+  {
+    // Tests use focused non-null assertions on known-present mock data.
+    files: ['**/*.test.ts'],
+    rules: { '@typescript-eslint/no-non-null-assertion': 'off' },
   },
   prettier,
 );

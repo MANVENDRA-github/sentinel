@@ -1,0 +1,31 @@
+{
+  "providers": {
+    "ollama": {
+      "type": "openai-compatible",
+      "baseUrlEnv": "OLLAMA_BASE_URL"
+    },
+    "openai": {
+      "type": "openai-compatible",
+      "baseUrl": "https://api.openai.com/v1",
+      "apiKeyEnv": "OPENAI_API_KEY"
+    },
+    "gemini": {
+      "type": "openai-compatible",
+      "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "apiKeyEnv": "GEMINI_API_KEY"
+    },
+    "groq": {
+      "type": "openai-compatible",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "apiKeyEnv": "GROQ_API_KEY"
+    }
+  },
+  "models": {
+    "llama3.2": "ollama",
+    "qwen2.5:0.5b": "ollama",
+    "gpt-4o-mini": "openai",
+    "gemini-2.0-flash": "gemini",
+    "llama-3.3-70b-versatile": "groq"
+  },
+  "defaultProvider": "ollama"
+}

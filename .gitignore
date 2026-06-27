@@ -11,10 +11,11 @@ coverage/
 *.sqlite3
 *.db
 
-# Secrets & local env (only .env.example is committed)
+# Secrets & local env (only the *.example files are committed)
 .env
 .env.local
 .env.*.local
+sentinel.config.json
 
 # Logs
 *.log

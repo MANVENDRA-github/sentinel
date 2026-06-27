@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:e2e": "node -e \"console.log('e2e suite lands in ROADMAP Phase 6')\"",
-    "dev": "node -e \"console.log('dev server lands in ROADMAP Phase 1')\"",
+    "dev": "tsx watch packages/gateway/src/main.ts",
+    "start": "tsx packages/gateway/src/main.ts",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run test:cov",
     "ollama:pull": "ollama pull qwen2.5:7b && ollama pull nomic-embed-text"
   },
@@ -30,11 +31,14 @@
     "eslint": "^9.17.0",
     "eslint-config-prettier": "^9.1.0",
     "prettier": "^3.4.2",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.19.0",
     "vitest": "^2.1.8"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild"]
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

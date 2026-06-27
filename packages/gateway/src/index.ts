@@ -1,14 +1,20 @@
-/**
- * Sentinel gateway package entry point.
- *
- * Phase 0 placeholder: this exists so the workspace, type-checker, linter, and
- * test runner have real code to operate on. The OpenAI-compatible proxy is
- * built here starting in ROADMAP Phase 1.
- */
+/** Public API surface of the Sentinel gateway. */
 
-export const SENTINEL_VERSION = '0.0.0';
+export const SENTINEL_VERSION = '0.1.0';
 
-/** Human-readable identifier for the gateway build. */
-export function banner(): string {
-  return `sentinel-gateway v${SENTINEL_VERSION}`;
-}
+export { buildServer } from './server.js';
+export type { ServerDeps } from './server.js';
+export { loadConfig, loadServerEnv } from './config.js';
+export type { ResolvedConfig, ResolvedProvider, ServerEnv, LoadConfigOptions } from './config.js';
+export { createRegistry } from './providers/registry.js';
+export type { ProviderRegistry } from './providers/registry.js';
+export { createOpenAICompatibleProvider } from './providers/openai-compatible.js';
+export type { Provider, FetchLike } from './providers/types.js';
+export {
+  GatewayError,
+  ValidationError,
+  AuthError,
+  ModelNotFoundError,
+  UpstreamError,
+  ConfigError,
+} from './errors.js';
