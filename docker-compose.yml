@@ -1,0 +1,26 @@
+# Local infrastructure for Sentinel.
+#   docker compose up -d            # start Redis + Ollama
+#   docker compose up -d redis      # start only Redis (if you run Ollama natively)
+#
+# Note: if you already run Ollama natively on :11434, start only `redis`
+# to avoid a port clash.
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama-models:/root/.ollama
+
+volumes:
+  ollama-models:

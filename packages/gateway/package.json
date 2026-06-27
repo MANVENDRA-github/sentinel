@@ -1,0 +1,7 @@
+{
+  "name": "@sentinel/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sentinel gateway — the verifying LLM proxy core. (Scaffold; built out from ROADMAP Phase 1.)"
+}

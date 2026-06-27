@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build & test output
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local data
+*.sqlite
+*.sqlite3
+*.db
+
+# Secrets & local env (only .env.example is committed)
+.env
+.env.local
+.env.*.local
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
