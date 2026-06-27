@@ -34,6 +34,16 @@ function makeRegistry(provider: Provider, opts: { unknownModel?: boolean } = {})
   };
 }
 
+function makeMultiRegistry(map: Record<string, Provider>): ProviderRegistry {
+  return {
+    resolve(model) {
+      const provider = map[model];
+      if (provider === undefined) throw new ModelNotFoundError(model);
+      return provider;
+    },
+  };
+}
+
 function buildTestServer(
   registry: ProviderRegistry,
   opts: { store?: TraceStore; adminKey?: string; cache?: SemanticCache } = {},
@@ -214,6 +224,147 @@ describe('POST /v1/chat/completions', () => {
   });
 });
 
+describe('routing, fallback & throttle', () => {
+  it('falls back to a healthy provider on a retryable upstream error', async () => {
+    const primary = makeProvider({
+      name: 'primary',
+      chat: () => Promise.reject(new UpstreamError('primary', 429, 'rate limited')),
+    });
+    const fb = makeProvider({ name: 'fb', chat: (req) => Promise.resolve({ served: req.model }) });
+    const app = buildServer({
+      registry: makeMultiRegistry({ primary, fb }),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: new InMemoryTraceStore(),
+      routing: { config: { fallback: ['fb'] }, maxRetries: 0, sleep: () => Promise.resolve() },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, model: 'primary' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ served: 'fb' });
+    await app.close();
+  });
+
+  it('routes model:"auto" to the classified cheapest tier', async () => {
+    const cheap = makeProvider({
+      name: 'cheap',
+      chat: (req) => Promise.resolve({ served: req.model }),
+    });
+    const big = makeProvider({
+      name: 'big',
+      chat: (req) => Promise.resolve({ served: req.model }),
+    });
+    const app = buildServer({
+      registry: makeMultiRegistry({ cheap, big }),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: new InMemoryTraceStore(),
+      routing: { config: { tiers: ['cheap', 'big'] } },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { model: 'auto', messages: [{ role: 'user', content: 'hi' }] },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ served: 'cheap' });
+    await app.close();
+  });
+
+  it('skips a throttled provider and falls back', async () => {
+    const primary = makeProvider({
+      name: 'primary',
+      chat: () => Promise.resolve({ served: 'primary' }),
+    });
+    const fb = makeProvider({ name: 'fb', chat: () => Promise.resolve({ served: 'fb' }) });
+    const throttle = { acquire: (provider: string) => Promise.resolve(provider !== 'primary') };
+    const app = buildServer({
+      registry: makeMultiRegistry({ primary, fb }),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: new InMemoryTraceStore(),
+      routing: { config: { fallback: ['fb'] }, throttle },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, model: 'primary' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ served: 'fb' });
+    await app.close();
+  });
+
+  it('does not fall back on a terminal (4xx) upstream error', async () => {
+    let fbCalls = 0;
+    const primary = makeProvider({
+      name: 'primary',
+      chat: () => Promise.reject(new UpstreamError('primary', 400, 'bad request')),
+    });
+    const fb = makeProvider({
+      name: 'fb',
+      chat: () => {
+        fbCalls += 1;
+        return Promise.resolve({ served: 'fb' });
+      },
+    });
+    const app = buildServer({
+      registry: makeMultiRegistry({ primary, fb }),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: new InMemoryTraceStore(),
+      routing: { config: { fallback: ['fb'] }, maxRetries: 2, sleep: () => Promise.resolve() },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, model: 'primary' },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(fbCalls).toBe(0);
+    await app.close();
+  });
+
+  it('falls back when the primary stream fails on its first chunk', async () => {
+    const primary = makeProvider({
+      name: 'primary',
+      // eslint-disable-next-line require-yield
+      chatStream: async function* () {
+        throw new UpstreamError('primary', 503, 'down');
+      },
+    });
+    const fb = makeProvider({
+      name: 'fb',
+      chatStream: async function* () {
+        yield '{"d":"fb"}';
+      },
+    });
+    const app = buildServer({
+      registry: makeMultiRegistry({ primary, fb }),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: new InMemoryTraceStore(),
+      routing: { config: { fallback: ['fb'] }, maxRetries: 0, sleep: () => Promise.resolve() },
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, model: 'primary', stream: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('{"d":"fb"}');
+    await app.close();
+  });
+});
+
 describe('tracing & /traces', () => {
   const sink = new InMemoryTraceStore();
   let provider: NodeTracerProvider | undefined;
@@ -294,6 +445,10 @@ describe('tracing & /traces', () => {
       errorMessage: null,
       apiKeyHash: null,
       cacheHit: false,
+      routedProvider: 'p',
+      routedModel: 'm',
+      fallbackUsed: false,
+      retryCount: 0,
     });
     const app = buildTestServer(makeRegistry(makeProvider()), {
       store: seeded,
@@ -328,6 +483,10 @@ describe('tracing & /traces', () => {
       errorMessage: null,
       apiKeyHash: null,
       cacheHit: false,
+      routedProvider: 'p',
+      routedModel: 'm',
+      fallbackUsed: false,
+      retryCount: 0,
     };
     store.record({ ...base, id: 's1', timestamp: 100, model: 'm1', stream: false, status: 200 });
     store.record({ ...base, id: 's2', timestamp: 200, model: 'm2', stream: true, status: 500 });
@@ -359,6 +518,43 @@ describe('tracing & /traces', () => {
     await app.inject({ method: 'POST', url, headers: auth, payload });
     await app.close();
     expect(sink.query({ cacheHit: true, model: 'cachetest' }).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('records routing metadata and supports the fallbackUsed filter', async () => {
+    const primary = makeProvider({
+      name: 'primary',
+      chat: () => Promise.reject(new UpstreamError('primary', 429, 'rate limited')),
+    });
+    const fb = makeProvider({ name: 'fb', chat: (req) => Promise.resolve({ served: req.model }) });
+    const app = buildServer({
+      registry: makeMultiRegistry({ primary, fb }),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: sink,
+      adminKey: 'admin-secret',
+      routing: { config: { fallback: ['fb'] }, maxRetries: 0, sleep: () => Promise.resolve() },
+    });
+    await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, model: 'primary' },
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/traces?fallbackUsed=true&routedProvider=fb',
+      headers: { authorization: 'Bearer admin-secret' },
+    });
+    await app.close();
+    const rows = res.json() as {
+      fallbackUsed: boolean;
+      routedProvider: string;
+      routedModel: string;
+    }[];
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    expect(rows[0]?.fallbackUsed).toBe(true);
+    expect(rows[0]?.routedProvider).toBe('fb');
+    expect(rows[0]?.routedModel).toBe('fb');
   });
 });
 

@@ -9,6 +9,29 @@ import type { ProviderRegistry } from './providers/registry.js';
 import type { TraceStore } from './telemetry/trace.js';
 import type { SemanticCache } from './cache/cache.js';
 import { traceRoutes } from './routes.traces.js';
+import { createRouter } from './routing/router.js';
+import type { RoutingConfig } from './routing/router.js';
+import { runChat, openStream } from './routing/executor.js';
+import type { ExecutorOptions, RouteOutcome } from './routing/executor.js';
+import type { BucketRegistry } from './throttle/token-bucket.js';
+
+/** Routing, retry, fallback, and throttle settings. Omit for a single-provider pass-through. */
+export interface RoutingDeps {
+  /** Tier list + fallback chain (from `sentinel.config.json`). */
+  config?: RoutingConfig | undefined;
+  /** Retries per candidate after the first attempt. */
+  maxRetries?: number | undefined;
+  /** Per-attempt timeout in ms (`0` disables). */
+  timeoutMs?: number | undefined;
+  /** Base retry backoff in ms. */
+  baseBackoffMs?: number | undefined;
+  /** Max throttle pacing wait per candidate before it is skipped. */
+  maxWaitMs?: number | undefined;
+  /** Per-provider rate-limit buckets. */
+  throttle?: BucketRegistry | undefined;
+  /** Injectable sleep (handy for tests). */
+  sleep?: ((ms: number) => Promise<void>) | undefined;
+}
 
 export interface ServerDeps {
   registry: ProviderRegistry;
@@ -16,6 +39,7 @@ export interface ServerDeps {
   traceStore: TraceStore;
   adminKey?: string | undefined;
   cache?: SemanticCache | undefined;
+  routing?: RoutingDeps | undefined;
   logger?: FastifyServerOptions['logger'];
 }
 
@@ -63,6 +87,15 @@ function setUsageAttributes(span: Span | undefined, result: unknown): void {
     span.setAttribute('gen_ai.usage.total_tokens', u.total_tokens);
 }
 
+/** Records which provider/model actually served the request after routing/fallback. */
+function applyRouteAttributes(span: Span | undefined, outcome: RouteOutcome): void {
+  span?.setAttribute('sentinel.provider', outcome.routedProvider);
+  span?.setAttribute('sentinel.routed_provider', outcome.routedProvider);
+  span?.setAttribute('sentinel.routed_model', outcome.routedModel);
+  span?.setAttribute('sentinel.fallback_used', outcome.fallbackUsed);
+  span?.setAttribute('sentinel.retry_count', outcome.retryCount);
+}
+
 /** Builds the Sentinel gateway Fastify app. Dependencies are injected for testability. */
 export function buildServer(deps: ServerDeps) {
   const app = Fastify({
@@ -85,6 +118,20 @@ export function buildServer(deps: ServerDeps) {
   });
 
   const authHook = createAuthHook(deps.apiKeys);
+
+  const routerConfig = deps.routing?.config;
+  const router = createRouter({
+    registry: deps.registry,
+    ...(routerConfig ? { routing: routerConfig } : {}),
+  });
+  const execOptions: ExecutorOptions = {
+    maxRetries: deps.routing?.maxRetries ?? 0,
+    timeoutMs: deps.routing?.timeoutMs ?? 0,
+    baseBackoffMs: deps.routing?.baseBackoffMs ?? 200,
+    maxWaitMs: deps.routing?.maxWaitMs ?? 0,
+    ...(deps.routing?.throttle ? { throttle: deps.routing.throttle } : {}),
+    ...(deps.routing?.sleep ? { sleep: deps.routing.sleep } : {}),
+  };
 
   app.post(
     '/v1/chat/completions',
@@ -119,8 +166,7 @@ export function buildServer(deps: ServerDeps) {
       span?.setAttribute('gen_ai.request.model', chatRequest.model);
       span?.setAttribute('sentinel.stream', chatRequest.stream === true);
 
-      const provider = deps.registry.resolve(chatRequest.model);
-      span?.setAttribute('sentinel.provider', provider.name);
+      const candidates = router.resolveCandidates(chatRequest);
 
       // ── Non-streaming ──────────────────────────────────────────────────────
       if (chatRequest.stream !== true) {
@@ -133,8 +179,9 @@ export function buildServer(deps: ServerDeps) {
             return reply.status(200).send(cached.body);
           }
         }
-        const result = await provider.chat(chatRequest);
+        const { result, outcome } = await runChat(candidates, chatRequest, execOptions);
         setUsageAttributes(span, result);
+        applyRouteAttributes(span, outcome);
         if (deps.cache !== undefined && apiKeyHash !== null) {
           await deps.cache.set(chatRequest, apiKeyHash, { kind: 'json', body: result });
         }
@@ -162,9 +209,10 @@ export function buildServer(deps: ServerDeps) {
       }
 
       // Miss: pull the first chunk *before* committing to a 200 SSE response, so an
-      // immediate upstream failure still maps to a proper error status; buffer for caching.
-      const iterator = provider.chatStream(chatRequest)[Symbol.asyncIterator]();
-      const first = await iterator.next();
+      // immediate upstream failure still routes/falls back to a proper error status;
+      // buffer for caching. Fallback is bounded to this first chunk (pre-hijack).
+      const { iterator, first, outcome } = await openStream(candidates, chatRequest, execOptions);
+      applyRouteAttributes(span, outcome);
 
       reply.hijack();
       reply.raw.writeHead(200, SSE_HEADERS);

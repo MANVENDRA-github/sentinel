@@ -7,7 +7,8 @@
     "openai": {
       "type": "openai-compatible",
       "baseUrl": "https://api.openai.com/v1",
-      "apiKeyEnv": "OPENAI_API_KEY"
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "rpm": 60
     },
     "gemini": {
       "type": "openai-compatible",
@@ -27,5 +28,9 @@
     "gemini-2.0-flash": "gemini",
     "llama-3.3-70b-versatile": "groq"
   },
-  "defaultProvider": "ollama"
+  "defaultProvider": "ollama",
+  "routing": {
+    "tiers": ["llama3.2", "gpt-4o-mini", "llama-3.3-70b-versatile"],
+    "fallback": ["llama3.2"]
+  }
 }

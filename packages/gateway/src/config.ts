@@ -17,6 +17,10 @@ export interface ServerEnv {
   cacheMaxEntries: number;
   ollamaBaseUrl: string;
   embedModel: string;
+  requestTimeoutMs: number;
+  maxRetries: number;
+  defaultRpm: number;
+  throttleMaxWaitMs: number;
 }
 
 const serverEnvSchema = z.object({
@@ -35,6 +39,10 @@ const serverEnvSchema = z.object({
   CACHE_MAX_ENTRIES: z.coerce.number().int().positive().default(1000),
   OLLAMA_BASE_URL: z.string().default('http://localhost:11434/v1'),
   EMBED_MODEL: z.string().default('nomic-embed-text'),
+  REQUEST_TIMEOUT_MS: z.coerce.number().int().nonnegative().default(30_000),
+  MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
+  DEFAULT_RPM: z.coerce.number().int().nonnegative().default(0),
+  THROTTLE_MAX_WAIT_MS: z.coerce.number().int().nonnegative().default(2_000),
 });
 
 /** Reads and validates the process environment Sentinel needs to run. */
@@ -62,6 +70,10 @@ export function loadServerEnv(env: NodeJS.ProcessEnv): ServerEnv {
     cacheMaxEntries: parsed.data.CACHE_MAX_ENTRIES,
     ollamaBaseUrl: parsed.data.OLLAMA_BASE_URL,
     embedModel: parsed.data.EMBED_MODEL,
+    requestTimeoutMs: parsed.data.REQUEST_TIMEOUT_MS,
+    maxRetries: parsed.data.MAX_RETRIES,
+    defaultRpm: parsed.data.DEFAULT_RPM,
+    throttleMaxWaitMs: parsed.data.THROTTLE_MAX_WAIT_MS,
   };
 }
 
@@ -73,16 +85,23 @@ const providerConfigSchema = z
     baseUrl: z.string().url().optional(),
     baseUrlEnv: z.string().min(1).optional(),
     apiKeyEnv: z.string().min(1).optional(),
+    rpm: z.coerce.number().int().nonnegative().optional(),
   })
   .refine((p) => (p.baseUrl === undefined) !== (p.baseUrlEnv === undefined), {
     message: 'set exactly one of "baseUrl" or "baseUrlEnv"',
   });
+
+const routingConfigSchema = z.object({
+  tiers: z.array(z.string().min(1)).optional(),
+  fallback: z.array(z.string().min(1)).optional(),
+});
 
 const sentinelConfigSchema = z
   .object({
     providers: z.record(z.string(), providerConfigSchema),
     models: z.record(z.string(), z.string()),
     defaultProvider: z.string().optional(),
+    routing: routingConfigSchema.optional(),
   })
   .superRefine((cfg, ctx) => {
     const names = new Set(Object.keys(cfg.providers));
@@ -106,6 +125,14 @@ export interface ResolvedProvider {
   name: string;
   baseUrl: string;
   apiKey: string | undefined;
+  /** Per-provider requests-per-minute limit for the throttle (omitted = unlimited). */
+  rpm?: number;
+}
+
+/** Routing rules (tier list + fallback chain) from the config file. */
+export interface ResolvedRouting {
+  tiers?: string[] | undefined;
+  fallback?: string[] | undefined;
 }
 
 export interface ResolvedConfig {
@@ -113,6 +140,7 @@ export interface ResolvedConfig {
   /** model name → provider name */
   models: Map<string, string>;
   defaultProvider: string | undefined;
+  routing?: ResolvedRouting;
 }
 
 export interface LoadConfigOptions {
@@ -149,13 +177,14 @@ export function loadConfig(options: LoadConfigOptions): ResolvedConfig {
   for (const [name, p] of Object.entries(parsed.data.providers)) {
     const baseUrl = p.baseUrl ?? readEnvOrThrow(options.env, p.baseUrlEnv, name);
     const apiKey = p.apiKeyEnv === undefined ? undefined : options.env[p.apiKeyEnv];
-    providers.set(name, { name, baseUrl, apiKey });
+    providers.set(name, { name, baseUrl, apiKey, ...(p.rpm !== undefined ? { rpm: p.rpm } : {}) });
   }
 
   return {
     providers,
     models: new Map(Object.entries(parsed.data.models)),
     defaultProvider: parsed.data.defaultProvider,
+    ...(parsed.data.routing ? { routing: parsed.data.routing } : {}),
   };
 }
 
