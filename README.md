@@ -2,7 +2,7 @@
 
 A self-hostable **verifying LLM gateway** — a drop-in, OpenAI-compatible proxy that **routes** (cheapest capable model + fallback), **semantically caches**, and **verifies** (deterministic guardrails inline + a local Ollama judge) every LLM call, with full OpenTelemetry tracing. Unlike after-the-fact observability tools, it can flag or block a bad response _before it returns_.
 
-> 🚧 **Early development.** Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md). Currently at **Phase 5 — verification: guardrails + judge** (a quality dashboard lands next).
+> 🚧 **Early development.** Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md). The gateway is feature-complete (proxy, tracing, cache, routing, verification) and now ships a **Phase 6** dashboard; hardening + launch (Phase 7) is next.
 
 ## What works today (Phase 1)
 
@@ -124,6 +124,17 @@ Sentinel can check a response's quality **in the request path**, not just after 
 - **Regression tracking.** Each request carries a model-independent **prompt fingerprint**, so `GET /regression` groups judge scores by `(prompt, model)` — compare the groups sharing a fingerprint to see how one prompt's quality differs across models or versions.
 
 Verdicts are queryable: `GET /traces?guardrailStatus=block`, `?judgeScoreMax=2`, `?promptFingerprint=…`. Inline guardrails apply to non-streaming responses; streamed responses are judged from their buffered output after they complete.
+
+## Dashboard
+
+A read-only **React + Vite** dashboard (`packages/dashboard`) visualizes the trace API: request volume over time, error / cache-hit / fallback rates, latency p95, token usage, provider / model / status distributions, a judge-score histogram, guardrail breakdown, a recent-requests table, and quality regressions. It aggregates client-side from `GET /traces` + `GET /regression`, so it needs only your gateway's `SENTINEL_ADMIN_KEY`.
+
+```bash
+pnpm dev                # gateway on :8080 (set SENTINEL_ADMIN_KEY to enable the admin API)
+pnpm dev:dashboard      # dashboard on :5173 (dev-proxies the admin API to :8080)
+```
+
+Open <http://localhost:5173>, paste your admin key, and hit Refresh. The dashboard is end-to-end tested with Playwright (`pnpm test:e2e`).
 
 ## Development
 

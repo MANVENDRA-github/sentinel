@@ -10,7 +10,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p packages/dashboard/tsconfig.json --noEmit",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
@@ -18,8 +18,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "test:e2e": "node -e \"console.log('e2e suite lands in ROADMAP Phase 6')\"",
+    "test:e2e": "pnpm --filter @sentinel/dashboard test:e2e",
     "dev": "tsx watch packages/gateway/src/main.ts",
+    "dev:dashboard": "pnpm --filter @sentinel/dashboard dev",
+    "build:dashboard": "pnpm --filter @sentinel/dashboard build",
     "start": "tsx packages/gateway/src/main.ts",
     "verify": "pnpm run typecheck && pnpm run lint && pnpm run test:cov",
     "ollama:pull": "ollama pull qwen2.5:7b && ollama pull nomic-embed-text"
