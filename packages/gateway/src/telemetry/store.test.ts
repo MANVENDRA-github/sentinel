@@ -20,6 +20,7 @@ function sample(over: Partial<TraceRecord> = {}): TraceRecord {
     errorType: null,
     errorMessage: null,
     apiKeyHash: 'abc',
+    cacheHit: false,
     ...over,
   };
 }

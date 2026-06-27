@@ -5,6 +5,9 @@ import { buildServer } from './server.js';
 import { ConfigError } from './errors.js';
 import { createTraceStore } from './telemetry/store.js';
 import { initTelemetry } from './telemetry/otel.js';
+import { createOllamaEmbedder } from './cache/embedder.js';
+import { createSemanticCache } from './cache/cache.js';
+import type { SemanticCache } from './cache/cache.js';
 
 async function main(): Promise<void> {
   const env = loadServerEnv(process.env);
@@ -14,11 +17,24 @@ async function main(): Promise<void> {
   const shutdownTelemetry = initTelemetry(store, {
     otlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
   });
+
+  let cache: SemanticCache | undefined;
+  if (env.cacheEnabled) {
+    cache = createSemanticCache({
+      embedder: createOllamaEmbedder({ baseUrl: env.ollamaBaseUrl, model: env.embedModel }),
+      threshold: env.cacheThreshold,
+      ttlMs: env.cacheTtlSeconds * 1000,
+      maxEntries: env.cacheMaxEntries,
+      embedModel: env.embedModel,
+    });
+  }
+
   const app = buildServer({
     registry,
     apiKeys: env.apiKeys,
     traceStore: store,
     adminKey: env.adminKey,
+    cache,
   });
 
   const shutdown = async (): Promise<void> => {

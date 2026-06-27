@@ -17,6 +17,7 @@ export interface TraceRecord {
   errorType: string | null;
   errorMessage: string | null;
   apiKeyHash: string | null;
+  cacheHit: boolean;
 }
 
 /** Filters for querying traces (all optional). */
@@ -27,6 +28,7 @@ export interface TraceQuery {
   stream?: boolean;
   since?: number;
   until?: number;
+  cacheHit?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -71,5 +73,6 @@ export function spanToTraceRecord(span: ReadableSpan): TraceRecord {
     errorType: asString(attrs['error.type']),
     errorMessage: isError ? (span.status.message ?? null) : null,
     apiKeyHash: asString(attrs['sentinel.api_key_hash']),
+    cacheHit: attrs['sentinel.cache_hit'] === true,
   };
 }

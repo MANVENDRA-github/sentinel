@@ -16,11 +16,13 @@ const SCHEMA = `
     total_tokens INTEGER,
     error_type TEXT,
     error_message TEXT,
-    api_key_hash TEXT
+    api_key_hash TEXT,
+    cache_hit INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces (timestamp);
   CREATE INDEX IF NOT EXISTS idx_traces_model ON traces (model);
   CREATE INDEX IF NOT EXISTS idx_traces_status ON traces (status);
+  CREATE INDEX IF NOT EXISTS idx_traces_cache_hit ON traces (cache_hit);
 `;
 
 interface TraceRow {
@@ -38,6 +40,7 @@ interface TraceRow {
   error_type: string | null;
   error_message: string | null;
   api_key_hash: string | null;
+  cache_hit: number;
 }
 
 /** SQLite-backed trace store (better-sqlite3, synchronous). Pass ':memory:' for tests. */
@@ -55,10 +58,12 @@ export class SqliteTraceStore implements TraceStore {
       .prepare(
         `INSERT OR REPLACE INTO traces
            (id, trace_id, timestamp, duration_ms, model, provider, stream, status,
-            prompt_tokens, completion_tokens, total_tokens, error_type, error_message, api_key_hash)
+            prompt_tokens, completion_tokens, total_tokens, error_type, error_message, api_key_hash,
+            cache_hit)
          VALUES
            (@id, @traceId, @timestamp, @durationMs, @model, @provider, @stream, @status,
-            @promptTokens, @completionTokens, @totalTokens, @errorType, @errorMessage, @apiKeyHash)`,
+            @promptTokens, @completionTokens, @totalTokens, @errorType, @errorMessage, @apiKeyHash,
+            @cacheHit)`,
       )
       .run({
         id: trace.id,
@@ -75,6 +80,7 @@ export class SqliteTraceStore implements TraceStore {
         errorType: trace.errorType,
         errorMessage: trace.errorMessage,
         apiKeyHash: trace.apiKeyHash,
+        cacheHit: trace.cacheHit ? 1 : 0,
       });
   }
 
@@ -104,6 +110,10 @@ export class SqliteTraceStore implements TraceStore {
     if (filter.until !== undefined) {
       where.push('timestamp <= @until');
       params.until = filter.until;
+    }
+    if (filter.cacheHit !== undefined) {
+      where.push('cache_hit = @cacheHit');
+      params.cacheHit = filter.cacheHit ? 1 : 0;
     }
     params.limit = filter.limit ?? 50;
     params.offset = filter.offset ?? 0;
@@ -142,5 +152,6 @@ function rowToRecord(row: TraceRow): TraceRecord {
     errorType: row.error_type,
     errorMessage: row.error_message,
     apiKeyHash: row.api_key_hash,
+    cacheHit: row.cache_hit === 1,
   };
 }
