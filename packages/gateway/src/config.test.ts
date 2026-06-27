@@ -46,6 +46,28 @@ describe('loadServerEnv', () => {
     expect(env.traceDb).toBe('sqlite');
     expect(env.adminKey).toBeUndefined();
   });
+
+  it('parses cache settings with sensible defaults', () => {
+    const def = loadServerEnv({ SENTINEL_API_KEYS: 'k' });
+    expect(def.cacheEnabled).toBe(true);
+    expect(def.cacheThreshold).toBe(0.92);
+    expect(def.ollamaBaseUrl).toBe('http://localhost:11434/v1');
+    expect(def.embedModel).toBe('nomic-embed-text');
+
+    const custom = loadServerEnv({
+      SENTINEL_API_KEYS: 'k',
+      CACHE_ENABLED: 'false',
+      CACHE_SIMILARITY_THRESHOLD: '0.8',
+      CACHE_TTL_SECONDS: '60',
+      CACHE_MAX_ENTRIES: '5',
+      EMBED_MODEL: 'custom-embed',
+    });
+    expect(custom.cacheEnabled).toBe(false);
+    expect(custom.cacheThreshold).toBe(0.8);
+    expect(custom.cacheTtlSeconds).toBe(60);
+    expect(custom.cacheMaxEntries).toBe(5);
+    expect(custom.embedModel).toBe('custom-embed');
+  });
 });
 
 const validConfig = JSON.stringify({

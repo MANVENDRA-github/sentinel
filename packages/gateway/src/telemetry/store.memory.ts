@@ -33,5 +33,6 @@ function matches(trace: TraceRecord, filter: TraceQuery): boolean {
   if (filter.stream !== undefined && trace.stream !== filter.stream) return false;
   if (filter.since !== undefined && trace.timestamp < filter.since) return false;
   if (filter.until !== undefined && trace.timestamp > filter.until) return false;
+  if (filter.cacheHit !== undefined && trace.cacheHit !== filter.cacheHit) return false;
   return true;
 }

@@ -20,3 +20,7 @@ export {
 } from './errors.js';
 export { createTraceStore } from './telemetry/store.js';
 export type { TraceStore, TraceRecord, TraceQuery } from './telemetry/trace.js';
+export { createSemanticCache } from './cache/cache.js';
+export type { SemanticCache, CachedResponse } from './cache/cache.js';
+export { createOllamaEmbedder } from './cache/embedder.js';
+export type { Embedder } from './cache/embedder.js';

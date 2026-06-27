@@ -9,6 +9,9 @@ import { ModelNotFoundError, UpstreamError } from './errors.js';
 import { InMemoryTraceStore } from './telemetry/store.memory.js';
 import type { TraceStore } from './telemetry/trace.js';
 import { TraceStoreSpanExporter } from './telemetry/exporter.js';
+import { createSemanticCache } from './cache/cache.js';
+import type { SemanticCache } from './cache/cache.js';
+import type { Embedder } from './cache/embedder.js';
 
 function makeProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -33,7 +36,7 @@ function makeRegistry(provider: Provider, opts: { unknownModel?: boolean } = {})
 
 function buildTestServer(
   registry: ProviderRegistry,
-  opts: { store?: TraceStore; adminKey?: string } = {},
+  opts: { store?: TraceStore; adminKey?: string; cache?: SemanticCache } = {},
 ) {
   return buildServer({
     registry,
@@ -41,6 +44,7 @@ function buildTestServer(
     logger: false,
     traceStore: opts.store ?? new InMemoryTraceStore(),
     adminKey: opts.adminKey,
+    cache: opts.cache,
   });
 }
 
@@ -289,6 +293,7 @@ describe('tracing & /traces', () => {
       errorType: null,
       errorMessage: null,
       apiKeyHash: null,
+      cacheHit: false,
     });
     const app = buildTestServer(makeRegistry(makeProvider()), {
       store: seeded,
@@ -322,6 +327,7 @@ describe('tracing & /traces', () => {
       errorType: null,
       errorMessage: null,
       apiKeyHash: null,
+      cacheHit: false,
     };
     store.record({ ...base, id: 's1', timestamp: 100, model: 'm1', stream: false, status: 200 });
     store.record({ ...base, id: 's2', timestamp: 200, model: 'm2', stream: true, status: 500 });
@@ -336,6 +342,110 @@ describe('tracing & /traces', () => {
     const rows = res.json() as { id: string }[];
     expect(rows).toHaveLength(1);
     expect(rows[0]?.id).toBe('s2');
+    await app.close();
+  });
+
+  it('marks cache hits in the trace', async () => {
+    const cache = createSemanticCache({
+      embedder: { embed: () => Promise.resolve([1, 0, 0]) },
+      threshold: 0.9,
+      ttlMs: 60_000,
+      maxEntries: 100,
+      embedModel: 'e',
+    });
+    const app = buildTestServer(makeRegistry(makeProvider()), { store: sink, cache });
+    const payload = { ...body, model: 'cachetest' };
+    await app.inject({ method: 'POST', url, headers: auth, payload });
+    await app.inject({ method: 'POST', url, headers: auth, payload });
+    await app.close();
+    expect(sink.query({ cacheHit: true, model: 'cachetest' }).length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('semantic cache', () => {
+  const fixedEmbedder: Embedder = { embed: () => Promise.resolve([1, 0, 0]) };
+  const makeCache = (embedder: Embedder = fixedEmbedder): SemanticCache =>
+    createSemanticCache({
+      embedder,
+      threshold: 0.9,
+      ttlMs: 60_000,
+      maxEntries: 100,
+      embedModel: 'e',
+    });
+
+  it('serves a cached non-streaming response without calling the provider again', async () => {
+    let calls = 0;
+    const provider = makeProvider({
+      chat: () => {
+        calls += 1;
+        return Promise.resolve({ id: 'cmpl', calls });
+      },
+    });
+    const app = buildTestServer(makeRegistry(provider), { cache: makeCache() });
+    const first = await app.inject({ method: 'POST', url, headers: auth, payload: body });
+    const second = await app.inject({ method: 'POST', url, headers: auth, payload: body });
+    expect(first.json()).toEqual({ id: 'cmpl', calls: 1 });
+    expect(second.json()).toEqual({ id: 'cmpl', calls: 1 });
+    expect(calls).toBe(1);
+    await app.close();
+  });
+
+  it('replays a cached streaming response', async () => {
+    let calls = 0;
+    const provider = makeProvider({
+      chatStream: async function* () {
+        calls += 1;
+        yield '{"d":1}';
+        yield '{"d":2}';
+      },
+    });
+    const app = buildTestServer(makeRegistry(provider), { cache: makeCache() });
+    const payload = { ...body, stream: true };
+    const first = await app.inject({ method: 'POST', url, headers: auth, payload });
+    const second = await app.inject({ method: 'POST', url, headers: auth, payload });
+    expect(first.body).toContain('data: {"d":1}');
+    expect(second.body).toContain('data: {"d":1}');
+    expect(second.body).toContain('data: [DONE]');
+    expect(calls).toBe(1);
+    await app.close();
+  });
+
+  it('does not share cached answers across API keys', async () => {
+    let calls = 0;
+    const provider = makeProvider({
+      chat: () => {
+        calls += 1;
+        return Promise.resolve({ id: 'x', calls });
+      },
+    });
+    const app = buildServer({
+      registry: makeRegistry(provider),
+      apiKeys: new Set(['k1', 'k2']),
+      logger: false,
+      traceStore: new InMemoryTraceStore(),
+      cache: makeCache(),
+    });
+    await app.inject({
+      method: 'POST',
+      url,
+      headers: { authorization: 'Bearer k1' },
+      payload: body,
+    });
+    await app.inject({
+      method: 'POST',
+      url,
+      headers: { authorization: 'Bearer k2' },
+      payload: body,
+    });
+    expect(calls).toBe(2);
+    await app.close();
+  });
+
+  it('fails open when the embedder errors', async () => {
+    const cache = makeCache({ embed: () => Promise.reject(new Error('embed down')) });
+    const app = buildTestServer(makeRegistry(makeProvider()), { cache });
+    const res = await app.inject({ method: 'POST', url, headers: auth, payload: body });
+    expect(res.statusCode).toBe(200);
     await app.close();
   });
 });

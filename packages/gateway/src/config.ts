@@ -11,6 +11,12 @@ export interface ServerEnv {
   adminKey: string | undefined;
   traceDb: 'sqlite' | 'memory';
   traceDbPath: string;
+  cacheEnabled: boolean;
+  cacheThreshold: number;
+  cacheTtlSeconds: number;
+  cacheMaxEntries: number;
+  ollamaBaseUrl: string;
+  embedModel: string;
 }
 
 const serverEnvSchema = z.object({
@@ -20,6 +26,15 @@ const serverEnvSchema = z.object({
   SENTINEL_ADMIN_KEY: z.string().optional(),
   TRACE_DB: z.enum(['sqlite', 'memory']).default('sqlite'),
   TRACE_DB_PATH: z.string().default('./traces.db'),
+  CACHE_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((v) => v === 'true'),
+  CACHE_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.92),
+  CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+  CACHE_MAX_ENTRIES: z.coerce.number().int().positive().default(1000),
+  OLLAMA_BASE_URL: z.string().default('http://localhost:11434/v1'),
+  EMBED_MODEL: z.string().default('nomic-embed-text'),
 });
 
 /** Reads and validates the process environment Sentinel needs to run. */
@@ -41,6 +56,12 @@ export function loadServerEnv(env: NodeJS.ProcessEnv): ServerEnv {
     adminKey: parsed.data.SENTINEL_ADMIN_KEY,
     traceDb: parsed.data.TRACE_DB,
     traceDbPath: parsed.data.TRACE_DB_PATH,
+    cacheEnabled: parsed.data.CACHE_ENABLED,
+    cacheThreshold: parsed.data.CACHE_SIMILARITY_THRESHOLD,
+    cacheTtlSeconds: parsed.data.CACHE_TTL_SECONDS,
+    cacheMaxEntries: parsed.data.CACHE_MAX_ENTRIES,
+    ollamaBaseUrl: parsed.data.OLLAMA_BASE_URL,
+    embedModel: parsed.data.EMBED_MODEL,
   };
 }
 

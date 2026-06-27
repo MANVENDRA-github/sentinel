@@ -38,8 +38,8 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 
 ### 5. Cache poisoning / data leakage
 
-- [ ] Cache key includes everything that changes the answer (model, system prompt, params) — a different context cannot collide into a wrong hit.
-- [ ] No cross-tenant cache hits; the similarity threshold cannot leak another key's data.
+- [x] Cache key includes everything that changes the answer (model, params, stream, embed-model) — a different context cannot collide into a wrong hit.
+- [x] No cross-tenant cache hits (entries bucketed by API-key hash); the similarity threshold cannot leak another key's data.
 
 ### 6. Log / trace data hygiene
 
@@ -69,5 +69,6 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 | —      | 2026-06-27 | —          | Initial context docs (no code) | n/a                                                                          | n/a      | n/a       | Baseline.                                                                                                                                                                                                                                                                                                                                                                                         |
 | SR-001 | 2026-06-27 | 1, 3, 4    | Phase 1 pass-through proxy     | Unauthenticated access; key/secret leakage; SSRF via request-controlled URLs | high     | mitigated | Bearer Sentinel-key auth required — 401 on missing/invalid (tested). Provider keys read from env via `apiKeyEnv`, never hard-coded, never returned to clients. Provider base URLs come only from the config file, never request input. `authorization`/`x-api-key` redacted in request logs via pino `redact` (configured; an explicit log-assertion test is still TODO — box 1.2 left unticked). |
 | SR-002 | 2026-06-27 | 3, 6       | Phase 2 tracing & persistence  | Unauthorized trace access; secrets/PII in stored traces                      | high     | mitigated | `GET /traces` gated by a separate `SENTINEL_ADMIN_KEY` — 401 without it (tested), distinct from client keys. Traces are metadata-only (model, provider, tokens, latency, status) — no prompt/response bodies persisted. API keys stored as a SHA-256 hash, never raw. Per-key trace scoping deferred (admin-only for now).                                                                        |
+| SR-003 | 2026-06-27 | 5          | Phase 3 semantic cache         | Cross-tenant cache leakage; wrong-answer collisions                          | high     | mitigated | Cache entries are bucketed per-tenant by API-key hash — no cross-tenant hits (tested). The bucket also keys on model/temperature/max_tokens/stream/embed-model, so requests that change the answer never collide; semantic matching happens only within a bucket above a conservative threshold (0.92, configurable). Cache fails open (embed errors → miss).                                     |
 
 > Add a row per high-risk change. Status ∈ {open, mitigated, accepted}. Severity ∈ {low, med, high, critical}.
