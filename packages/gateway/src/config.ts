@@ -21,6 +21,11 @@ export interface ServerEnv {
   maxRetries: number;
   defaultRpm: number;
   throttleMaxWaitMs: number;
+  verifyEnabled: boolean;
+  guardrailsBlock: boolean;
+  judgeEnabled: boolean;
+  judgeModel: string;
+  judgeSampleRate: number;
 }
 
 const serverEnvSchema = z.object({
@@ -43,6 +48,20 @@ const serverEnvSchema = z.object({
   MAX_RETRIES: z.coerce.number().int().nonnegative().default(2),
   DEFAULT_RPM: z.coerce.number().int().nonnegative().default(0),
   THROTTLE_MAX_WAIT_MS: z.coerce.number().int().nonnegative().default(2_000),
+  VERIFY_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  GUARDRAILS_BLOCK: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  JUDGE_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  JUDGE_MODEL: z.string().default('qwen2.5:7b'),
+  JUDGE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
 });
 
 /** Reads and validates the process environment Sentinel needs to run. */
@@ -74,6 +93,11 @@ export function loadServerEnv(env: NodeJS.ProcessEnv): ServerEnv {
     maxRetries: parsed.data.MAX_RETRIES,
     defaultRpm: parsed.data.DEFAULT_RPM,
     throttleMaxWaitMs: parsed.data.THROTTLE_MAX_WAIT_MS,
+    verifyEnabled: parsed.data.VERIFY_ENABLED,
+    guardrailsBlock: parsed.data.GUARDRAILS_BLOCK,
+    judgeEnabled: parsed.data.JUDGE_ENABLED,
+    judgeModel: parsed.data.JUDGE_MODEL,
+    judgeSampleRate: parsed.data.JUDGE_SAMPLE_RATE,
   };
 }
 
@@ -96,12 +120,19 @@ const routingConfigSchema = z.object({
   fallback: z.array(z.string().min(1)).optional(),
 });
 
+const guardrailsConfigSchema = z.object({
+  blocklist: z.array(z.string().min(1)).optional(),
+  pii: z.array(z.string().min(1)).optional(),
+  requireJson: z.boolean().optional(),
+});
+
 const sentinelConfigSchema = z
   .object({
     providers: z.record(z.string(), providerConfigSchema),
     models: z.record(z.string(), z.string()),
     defaultProvider: z.string().optional(),
     routing: routingConfigSchema.optional(),
+    guardrails: guardrailsConfigSchema.optional(),
   })
   .superRefine((cfg, ctx) => {
     const names = new Set(Object.keys(cfg.providers));
@@ -135,12 +166,20 @@ export interface ResolvedRouting {
   fallback?: string[] | undefined;
 }
 
+/** Guardrail policy (content blocklist + PII categories) from the config file. */
+export interface ResolvedGuardrails {
+  blocklist?: string[] | undefined;
+  pii?: string[] | undefined;
+  requireJson?: boolean | undefined;
+}
+
 export interface ResolvedConfig {
   providers: Map<string, ResolvedProvider>;
   /** model name → provider name */
   models: Map<string, string>;
   defaultProvider: string | undefined;
   routing?: ResolvedRouting;
+  guardrails?: ResolvedGuardrails;
 }
 
 export interface LoadConfigOptions {
@@ -185,6 +224,7 @@ export function loadConfig(options: LoadConfigOptions): ResolvedConfig {
     models: new Map(Object.entries(parsed.data.models)),
     defaultProvider: parsed.data.defaultProvider,
     ...(parsed.data.routing ? { routing: parsed.data.routing } : {}),
+    ...(parsed.data.guardrails ? { guardrails: parsed.data.guardrails } : {}),
   };
 }
 

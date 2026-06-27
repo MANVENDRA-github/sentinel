@@ -25,6 +25,12 @@ function sample(over: Partial<TraceRecord> = {}): TraceRecord {
     routedModel: 'gpt-4o-mini',
     fallbackUsed: false,
     retryCount: 0,
+    guardrailStatus: null,
+    guardrailViolations: null,
+    judgeScore: null,
+    judgeReason: null,
+    judgeError: null,
+    promptFingerprint: null,
     ...over,
   };
 }
@@ -73,6 +79,34 @@ for (const [name, makeStore] of backends) {
       expect(store.query({ routedProvider: 'p2' }).map((t) => t.id)).toEqual(['b']);
       expect(store.query({ fallbackUsed: true }).map((t) => t.id)).toEqual(['b']);
       expect(store.query({ fallbackUsed: false }).map((t) => t.id)).toEqual(['a']);
+      store.close();
+    });
+
+    it('filters by guardrailStatus, judge score range, and promptFingerprint', () => {
+      const store = makeStore();
+      store.record(
+        sample({ id: 'a', guardrailStatus: 'flag', judgeScore: 2, promptFingerprint: 'fp1' }),
+      );
+      store.record(
+        sample({ id: 'b', guardrailStatus: 'pass', judgeScore: 5, promptFingerprint: 'fp2' }),
+      );
+      expect(store.query({ guardrailStatus: 'flag' }).map((t) => t.id)).toEqual(['a']);
+      expect(store.query({ judgeScoreMax: 3 }).map((t) => t.id)).toEqual(['a']);
+      expect(store.query({ judgeScoreMin: 4 }).map((t) => t.id)).toEqual(['b']);
+      expect(store.query({ promptFingerprint: 'fp2' }).map((t) => t.id)).toEqual(['b']);
+      store.close();
+    });
+
+    it('attachVerdict updates judge fields and ignores unknown ids', () => {
+      const store = makeStore();
+      store.record(sample({ id: 'v', judgeScore: null }));
+      store.attachVerdict('v', { judgeScore: 4, judgeReason: 'solid', judgeError: null });
+      const got = store.get('v');
+      expect(got?.judgeScore).toBe(4);
+      expect(got?.judgeReason).toBe('solid');
+      expect(got?.judgeError).toBeNull();
+      store.attachVerdict('missing', { judgeScore: 1, judgeReason: null, judgeError: 'x' });
+      expect(store.query()).toHaveLength(1);
       store.close();
     });
 

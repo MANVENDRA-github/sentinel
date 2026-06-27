@@ -32,5 +32,10 @@
   "routing": {
     "tiers": ["llama3.2", "gpt-4o-mini", "llama-3.3-70b-versatile"],
     "fallback": ["llama3.2"]
+  },
+  "guardrails": {
+    "blocklist": ["ignore previous instructions"],
+    "pii": ["pii.email", "pii.credit_card", "pii.ssn"],
+    "requireJson": true
   }
 }

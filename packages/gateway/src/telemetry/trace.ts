@@ -26,6 +26,25 @@ export interface TraceRecord {
   fallbackUsed: boolean;
   /** Retries spent before the request succeeded. */
   retryCount: number;
+  /** Inline guardrail outcome: `pass` | `flag` | `block` (null when guardrails are off). */
+  guardrailStatus: string | null;
+  /** Matched guardrail category codes (comma-joined), e.g. `pii.email`. Never raw content. */
+  guardrailViolations: string | null;
+  /** Async LLM-judge score, 1–5 (null = not sampled or "unscored"). */
+  judgeScore: number | null;
+  /** Judge's short critique (judge-authored metadata, capped — not the response body). */
+  judgeReason: string | null;
+  /** Judge transport/parse error, when scoring failed (⇒ "unscored", never a pass). */
+  judgeError: string | null;
+  /** Model-independent prompt fingerprint, for regression grouping across models/versions. */
+  promptFingerprint: string | null;
+}
+
+/** Fields the async judge attaches to an already-recorded trace. */
+export interface VerdictUpdate {
+  judgeScore: number | null;
+  judgeReason: string | null;
+  judgeError: string | null;
 }
 
 /** Filters for querying traces (all optional). */
@@ -39,6 +58,10 @@ export interface TraceQuery {
   cacheHit?: boolean;
   routedProvider?: string;
   fallbackUsed?: boolean;
+  guardrailStatus?: string;
+  judgeScoreMin?: number;
+  judgeScoreMax?: number;
+  promptFingerprint?: string;
   limit?: number;
   offset?: number;
 }
@@ -46,6 +69,8 @@ export interface TraceQuery {
 /** A persistence sink for trace records. Implemented by the in-memory and SQLite stores. */
 export interface TraceStore {
   record(trace: TraceRecord): void;
+  /** Attaches an async judge verdict to an already-recorded trace (no-op if the id is unknown). */
+  attachVerdict(id: string, verdict: VerdictUpdate): void;
   query(filter?: TraceQuery): TraceRecord[];
   get(id: string): TraceRecord | undefined;
   close(): void;
@@ -88,5 +113,12 @@ export function spanToTraceRecord(span: ReadableSpan): TraceRecord {
     routedModel: asString(attrs['sentinel.routed_model']),
     fallbackUsed: attrs['sentinel.fallback_used'] === true,
     retryCount: asNumber(attrs['sentinel.retry_count']) ?? 0,
+    guardrailStatus: asString(attrs['sentinel.guardrail_status']),
+    guardrailViolations: asString(attrs['sentinel.guardrail_violations']),
+    // Judge fields are filled in later via attachVerdict, not from the span.
+    judgeScore: null,
+    judgeReason: null,
+    judgeError: null,
+    promptFingerprint: asString(attrs['sentinel.prompt_fingerprint']),
   };
 }

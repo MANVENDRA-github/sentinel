@@ -1,4 +1,4 @@
-import type { TraceQuery, TraceRecord, TraceStore } from './trace.js';
+import type { TraceQuery, TraceRecord, TraceStore, VerdictUpdate } from './trace.js';
 
 /** In-memory trace store — used by tests and as a no-database fallback. */
 export class InMemoryTraceStore implements TraceStore {
@@ -6,6 +6,14 @@ export class InMemoryTraceStore implements TraceStore {
 
   record(trace: TraceRecord): void {
     this.traces.push(trace);
+  }
+
+  attachVerdict(id: string, verdict: VerdictUpdate): void {
+    const trace = this.traces.find((t) => t.id === id);
+    if (trace === undefined) return;
+    trace.judgeScore = verdict.judgeScore;
+    trace.judgeReason = verdict.judgeReason;
+    trace.judgeError = verdict.judgeError;
   }
 
   query(filter: TraceQuery = {}): TraceRecord[] {
@@ -37,5 +45,16 @@ function matches(trace: TraceRecord, filter: TraceQuery): boolean {
   if (filter.routedProvider !== undefined && trace.routedProvider !== filter.routedProvider)
     return false;
   if (filter.fallbackUsed !== undefined && trace.fallbackUsed !== filter.fallbackUsed) return false;
+  if (filter.guardrailStatus !== undefined && trace.guardrailStatus !== filter.guardrailStatus)
+    return false;
+  if (filter.judgeScoreMin !== undefined && (trace.judgeScore ?? -Infinity) < filter.judgeScoreMin)
+    return false;
+  if (filter.judgeScoreMax !== undefined && (trace.judgeScore ?? Infinity) > filter.judgeScoreMax)
+    return false;
+  if (
+    filter.promptFingerprint !== undefined &&
+    trace.promptFingerprint !== filter.promptFingerprint
+  )
+    return false;
   return true;
 }

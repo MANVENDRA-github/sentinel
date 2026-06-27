@@ -35,11 +35,24 @@ export {
   AuthError,
   ModelNotFoundError,
   UpstreamError,
+  GuardrailBlockedError,
   ConfigError,
 } from './errors.js';
 export { createTraceStore } from './telemetry/store.js';
-export type { TraceStore, TraceRecord, TraceQuery } from './telemetry/trace.js';
+export type { TraceStore, TraceRecord, TraceQuery, VerdictUpdate } from './telemetry/trace.js';
 export { createSemanticCache } from './cache/cache.js';
 export type { SemanticCache, CachedResponse } from './cache/cache.js';
 export { createOllamaEmbedder } from './cache/embedder.js';
 export type { Embedder } from './cache/embedder.js';
+export { createVerifier } from './verify/verifier.js';
+export type { Verifier, VerifierOptions } from './verify/verifier.js';
+export { runGuardrails } from './verify/guardrails.js';
+export type { GuardrailConfig, GuardrailVerdict, GuardrailStatus } from './verify/guardrails.js';
+export { detectPolicy } from './verify/policy.js';
+export type { PolicyConfig } from './verify/policy.js';
+export { validateAgainstSchema } from './verify/schema.js';
+export { createOllamaJudge, buildJudgePrompt, parseJudgeVerdict } from './verify/judge.js';
+export type { Judge, JudgeResult, OllamaJudgeOptions } from './verify/judge.js';
+export { promptFingerprint } from './verify/fingerprint.js';
+export { aggregateRegression } from './verify/regression.js';
+export type { RegressionGroup } from './verify/regression.js';

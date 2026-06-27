@@ -9,6 +9,9 @@ import { createOllamaEmbedder } from './cache/embedder.js';
 import { createSemanticCache } from './cache/cache.js';
 import type { SemanticCache } from './cache/cache.js';
 import { createBucketRegistry } from './throttle/token-bucket.js';
+import { createOllamaJudge } from './verify/judge.js';
+import { createVerifier } from './verify/verifier.js';
+import type { Verifier } from './verify/verifier.js';
 
 async function main(): Promise<void> {
   const env = loadServerEnv(process.env);
@@ -36,6 +39,22 @@ async function main(): Promise<void> {
   }
   const throttle = createBucketRegistry({ rpmByProvider, defaultRpm: env.defaultRpm });
 
+  let verifier: Verifier | undefined;
+  if (env.verifyEnabled || env.judgeEnabled) {
+    verifier = createVerifier({
+      store,
+      ...(env.verifyEnabled
+        ? { guardrails: { block: env.guardrailsBlock, ...config.guardrails } }
+        : {}),
+      ...(env.judgeEnabled
+        ? {
+            judge: createOllamaJudge({ baseUrl: env.ollamaBaseUrl, model: env.judgeModel }),
+            sampleRate: env.judgeSampleRate,
+          }
+        : {}),
+    });
+  }
+
   const app = buildServer({
     registry,
     apiKeys: env.apiKeys,
@@ -49,10 +68,12 @@ async function main(): Promise<void> {
       maxWaitMs: env.throttleMaxWaitMs,
       throttle,
     },
+    verifier,
   });
 
   const shutdown = async (): Promise<void> => {
     await app.close();
+    await verifier?.drain();
     await shutdownTelemetry();
     store.close();
   };
