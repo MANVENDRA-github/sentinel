@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { trace } from '@opentelemetry/api';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
@@ -12,6 +12,8 @@ import { TraceStoreSpanExporter } from './telemetry/exporter.js';
 import { createSemanticCache } from './cache/cache.js';
 import type { SemanticCache } from './cache/cache.js';
 import type { Embedder } from './cache/embedder.js';
+import { createVerifier } from './verify/verifier.js';
+import type { Judge } from './verify/judge.js';
 
 function makeProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -365,6 +367,37 @@ describe('routing, fallback & throttle', () => {
   });
 });
 
+describe('inline guardrails', () => {
+  const guarded = (content: string, block: boolean) => {
+    const store = new InMemoryTraceStore();
+    const provider = makeProvider({
+      chat: () => Promise.resolve({ choices: [{ message: { role: 'assistant', content } }] }),
+    });
+    return buildServer({
+      registry: makeRegistry(provider),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: store,
+      verifier: createVerifier({ store, guardrails: { block } }),
+    });
+  };
+
+  it('blocks a violating response with 422 when blocking is enabled', async () => {
+    const app = guarded('reach me at a@b.com', true);
+    const res = await app.inject({ method: 'POST', url, headers: auth, payload: body });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.type).toBe('guardrail_blocked');
+    await app.close();
+  });
+
+  it('passes a clean response through even with blocking enabled', async () => {
+    const app = guarded('all good here', true);
+    const res = await app.inject({ method: 'POST', url, headers: auth, payload: body });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+  });
+});
+
 describe('tracing & /traces', () => {
   const sink = new InMemoryTraceStore();
   let provider: NodeTracerProvider | undefined;
@@ -449,6 +482,12 @@ describe('tracing & /traces', () => {
       routedModel: 'm',
       fallbackUsed: false,
       retryCount: 0,
+      guardrailStatus: null,
+      guardrailViolations: null,
+      judgeScore: null,
+      judgeReason: null,
+      judgeError: null,
+      promptFingerprint: null,
     });
     const app = buildTestServer(makeRegistry(makeProvider()), {
       store: seeded,
@@ -487,6 +526,12 @@ describe('tracing & /traces', () => {
       routedModel: 'm',
       fallbackUsed: false,
       retryCount: 0,
+      guardrailStatus: null,
+      guardrailViolations: null,
+      judgeScore: null,
+      judgeReason: null,
+      judgeError: null,
+      promptFingerprint: null,
     };
     store.record({ ...base, id: 's1', timestamp: 100, model: 'm1', stream: false, status: 200 });
     store.record({ ...base, id: 's2', timestamp: 200, model: 'm2', stream: true, status: 500 });
@@ -555,6 +600,175 @@ describe('tracing & /traces', () => {
     expect(rows[0]?.fallbackUsed).toBe(true);
     expect(rows[0]?.routedProvider).toBe('fb');
     expect(rows[0]?.routedModel).toBe('fb');
+  });
+
+  const replyWith = (content: string): Provider =>
+    makeProvider({
+      chat: () => Promise.resolve({ choices: [{ message: { role: 'assistant', content } }] }),
+    });
+
+  it('flags a guardrail violation on the trace but still returns 200', async () => {
+    const verifier = createVerifier({ store: sink, guardrails: { block: false } });
+    const app = buildServer({
+      registry: makeRegistry(replyWith('mail me at a@b.com')),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: sink,
+      verifier,
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, model: 'guardflag' },
+    });
+    expect(res.statusCode).toBe(200);
+    await app.close();
+    const record = sink.query({ model: 'guardflag' })[0];
+    expect(record?.guardrailStatus).toBe('flag');
+    expect(record?.guardrailViolations).toContain('pii.email');
+    expect(record?.promptFingerprint).not.toBeNull();
+  });
+
+  it('records a judge verdict on the trace', async () => {
+    const judge: Judge = { score: () => Promise.resolve({ score: 5, reason: 'great' }) };
+    const verifier = createVerifier({ store: sink, judge, shouldSample: () => true });
+    const app = buildServer({
+      registry: makeRegistry(replyWith('4')),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: sink,
+      verifier,
+    });
+    await app.inject({ method: 'POST', url, headers: auth, payload: { ...body, model: 'judged' } });
+    await verifier.drain();
+    await app.close();
+    const record = sink.query({ model: 'judged' })[0];
+    expect(record?.judgeScore).toBe(5);
+    expect(record?.judgeReason).toBe('great');
+  });
+
+  it('records "unscored" when the judge fails', async () => {
+    const judge: Judge = { score: () => Promise.reject(new Error('down')) };
+    const verifier = createVerifier({ store: sink, judge, shouldSample: () => true });
+    const app = buildServer({
+      registry: makeRegistry(replyWith('4')),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: sink,
+      verifier,
+    });
+    await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, model: 'judgefail' },
+    });
+    await verifier.drain();
+    await app.close();
+    const record = sink.query({ model: 'judgefail' })[0];
+    expect(record?.judgeScore).toBeNull();
+    expect(record?.judgeError).toBe('down');
+  });
+
+  it('judges a streamed response after it completes', async () => {
+    const provider = makeProvider({
+      chatStream: async function* () {
+        yield 'keep-alive-noise';
+        yield JSON.stringify({ choices: [{ delta: { content: 'hello' } }] });
+      },
+    });
+    const judge: Judge = { score: vi.fn(() => Promise.resolve({ score: 4, reason: 'ok' })) };
+    const verifier = createVerifier({ store: sink, judge, shouldSample: () => true });
+    const app = buildServer({
+      registry: makeRegistry(provider),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: sink,
+      verifier,
+    });
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, model: 'streamjudge', stream: true },
+    });
+    expect(res.statusCode).toBe(200);
+    await verifier.drain();
+    await app.close();
+    expect(judge.score).toHaveBeenCalledWith(expect.anything(), 'hello');
+    const record = sink.query({ model: 'streamjudge' })[0];
+    expect(record?.judgeScore).toBe(4);
+    expect(record?.promptFingerprint).not.toBeNull();
+  });
+
+  it('serves regression aggregates over judged traces', async () => {
+    const seeded = new InMemoryTraceStore();
+    const base = {
+      traceId: 't',
+      durationMs: 1,
+      provider: 'p',
+      stream: false,
+      status: 200,
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      errorType: null,
+      errorMessage: null,
+      apiKeyHash: null,
+      cacheHit: false,
+      routedProvider: null,
+      routedModel: null,
+      fallbackUsed: false,
+      retryCount: 0,
+      guardrailStatus: null,
+      guardrailViolations: null,
+      judgeReason: null,
+      judgeError: null,
+    };
+    seeded.record({
+      ...base,
+      id: 'r1',
+      timestamp: 1,
+      model: 'a',
+      judgeScore: 4,
+      promptFingerprint: 'fp',
+    });
+    seeded.record({
+      ...base,
+      id: 'r2',
+      timestamp: 2,
+      model: 'b',
+      judgeScore: 2,
+      promptFingerprint: 'fp',
+    });
+    const app = buildTestServer(makeRegistry(makeProvider()), {
+      store: seeded,
+      adminKey: 'admin-secret',
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/regression?promptFingerprint=fp&model=a&since=0',
+      headers: { authorization: 'Bearer admin-secret' },
+    });
+    await app.close();
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toHaveLength(1);
+  });
+
+  it('parses the verification query filters on /traces', async () => {
+    const app = buildTestServer(makeRegistry(makeProvider()), {
+      store: new InMemoryTraceStore(),
+      adminKey: 'admin-secret',
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/traces?guardrailStatus=flag&judgeScoreMin=1&judgeScoreMax=5&promptFingerprint=fp',
+      headers: { authorization: 'Bearer admin-secret' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(Array.isArray(res.json())).toBe(true);
+    await app.close();
   });
 });
 

@@ -42,6 +42,10 @@ function parseTraceQuery(raw: unknown): TraceQuery {
   if (q.cacheHit !== undefined) query.cacheHit = q.cacheHit === 'true';
   if (q.routedProvider !== undefined) query.routedProvider = q.routedProvider;
   if (q.fallbackUsed !== undefined) query.fallbackUsed = q.fallbackUsed === 'true';
+  if (q.guardrailStatus !== undefined) query.guardrailStatus = q.guardrailStatus;
+  if (q.judgeScoreMin !== undefined) query.judgeScoreMin = Number(q.judgeScoreMin);
+  if (q.judgeScoreMax !== undefined) query.judgeScoreMax = Number(q.judgeScoreMax);
+  if (q.promptFingerprint !== undefined) query.promptFingerprint = q.promptFingerprint;
   if (q.limit !== undefined) query.limit = Math.min(Number(q.limit), 500);
   if (q.offset !== undefined) query.offset = Number(q.offset);
   return query;

@@ -4,16 +4,18 @@ import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import type { Span } from '@opentelemetry/api';
 import { chatCompletionRequestSchema } from './schemas.js';
 import { createAuthHook, extractBearerToken, hashApiKey } from './auth.js';
-import { GatewayError, ValidationError } from './errors.js';
+import { GatewayError, GuardrailBlockedError, ValidationError } from './errors.js';
 import type { ProviderRegistry } from './providers/registry.js';
 import type { TraceStore } from './telemetry/trace.js';
 import type { SemanticCache } from './cache/cache.js';
 import { traceRoutes } from './routes.traces.js';
+import { regressionRoutes } from './routes.regression.js';
 import { createRouter } from './routing/router.js';
 import type { RoutingConfig } from './routing/router.js';
 import { runChat, openStream } from './routing/executor.js';
 import type { ExecutorOptions, RouteOutcome } from './routing/executor.js';
 import type { BucketRegistry } from './throttle/token-bucket.js';
+import type { Verifier } from './verify/verifier.js';
 
 /** Routing, retry, fallback, and throttle settings. Omit for a single-provider pass-through. */
 export interface RoutingDeps {
@@ -40,6 +42,7 @@ export interface ServerDeps {
   adminKey?: string | undefined;
   cache?: SemanticCache | undefined;
   routing?: RoutingDeps | undefined;
+  verifier?: Verifier | undefined;
   logger?: FastifyServerOptions['logger'];
 }
 
@@ -94,6 +97,32 @@ function applyRouteAttributes(span: Span | undefined, outcome: RouteOutcome): vo
   span?.setAttribute('sentinel.routed_model', outcome.routedModel);
   span?.setAttribute('sentinel.fallback_used', outcome.fallbackUsed);
   span?.setAttribute('sentinel.retry_count', outcome.retryCount);
+}
+
+/** Pulls the assistant message text out of a non-streaming OpenAI-style response. */
+function extractText(result: unknown): string {
+  if (typeof result !== 'object' || result === null) return '';
+  const choices = (result as { choices?: unknown }).choices;
+  if (!Array.isArray(choices) || choices.length === 0) return '';
+  const message = (choices[0] as { message?: unknown }).message;
+  if (typeof message !== 'object' || message === null) return '';
+  const content = (message as { content?: unknown }).content;
+  return typeof content === 'string' ? content : '';
+}
+
+/** Reassembles streamed text from buffered SSE delta chunks (best-effort, for the judge). */
+function extractStreamText(chunks: string[]): string {
+  let text = '';
+  for (const chunk of chunks) {
+    try {
+      const parsed = JSON.parse(chunk) as { choices?: { delta?: { content?: unknown } }[] };
+      const piece = parsed.choices?.[0]?.delta?.content;
+      if (typeof piece === 'string') text += piece;
+    } catch {
+      // non-JSON keep-alive chunk — nothing to add to the judged text
+    }
+  }
+  return text;
 }
 
 /** Builds the Sentinel gateway Fastify app. Dependencies are injected for testability. */
@@ -182,11 +211,30 @@ export function buildServer(deps: ServerDeps) {
         const { result, outcome } = await runChat(candidates, chatRequest, execOptions);
         setUsageAttributes(span, result);
         applyRouteAttributes(span, outcome);
+
+        let responseText: string | undefined;
+        if (deps.verifier !== undefined) {
+          span?.setAttribute('sentinel.prompt_fingerprint', deps.verifier.fingerprint(chatRequest));
+          responseText = extractText(result);
+          const verdict = deps.verifier.inspect(chatRequest, responseText);
+          span?.setAttribute('sentinel.guardrail_status', verdict.status);
+          if (verdict.violations.length > 0) {
+            span?.setAttribute('sentinel.guardrail_violations', verdict.violations.join(','));
+          }
+          if (verdict.status === 'block') {
+            throw new GuardrailBlockedError(verdict.violations);
+          }
+        }
+
         if (deps.cache !== undefined && apiKeyHash !== null) {
           await deps.cache.set(chatRequest, apiKeyHash, { kind: 'json', body: result });
         }
         span?.setAttribute('sentinel.cache_hit', false);
         endSpan(request, 200);
+        // Async, sampled judge runs after the row is written; never blocks the response.
+        if (deps.verifier !== undefined && span !== undefined && responseText !== undefined) {
+          deps.verifier.scheduleJudge(span.spanContext().spanId, chatRequest, responseText);
+        }
         return reply.status(200).send(result);
       }
 
@@ -213,6 +261,9 @@ export function buildServer(deps: ServerDeps) {
       // buffer for caching. Fallback is bounded to this first chunk (pre-hijack).
       const { iterator, first, outcome } = await openStream(candidates, chatRequest, execOptions);
       applyRouteAttributes(span, outcome);
+      if (deps.verifier !== undefined) {
+        span?.setAttribute('sentinel.prompt_fingerprint', deps.verifier.fingerprint(chatRequest));
+      }
 
       reply.hijack();
       reply.raw.writeHead(200, SSE_HEADERS);
@@ -235,15 +286,23 @@ export function buildServer(deps: ServerDeps) {
         endSpan(request, 200, streamError);
       }
 
-      // Only cache a stream that completed cleanly.
+      // Only cache / judge a stream that completed cleanly.
       if (streamError === undefined && deps.cache !== undefined && apiKeyHash !== null) {
         await deps.cache.set(chatRequest, apiKeyHash, { kind: 'stream', chunks: buffered });
+      }
+      if (streamError === undefined && deps.verifier !== undefined && span !== undefined) {
+        deps.verifier.scheduleJudge(
+          span.spanContext().spanId,
+          chatRequest,
+          extractStreamText(buffered),
+        );
       }
       return reply;
     },
   );
 
   app.register(traceRoutes, { traceStore: deps.traceStore, adminKey: deps.adminKey });
+  app.register(regressionRoutes, { traceStore: deps.traceStore, adminKey: deps.adminKey });
 
   return app;
 }

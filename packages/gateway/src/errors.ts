@@ -73,6 +73,18 @@ export class UpstreamError extends GatewayError {
   }
 }
 
+/** The response failed an inline guardrail and blocking is enabled. */
+export class GuardrailBlockedError extends GatewayError {
+  constructor(violations: string[]) {
+    super(
+      422,
+      `Response blocked by guardrails: ${violations.join(', ')}`,
+      'guardrail_blocked',
+      'guardrail_blocked',
+    );
+  }
+}
+
 /** A startup/configuration error (not request-scoped). */
 export class ConfigError extends Error {
   constructor(message: string) {

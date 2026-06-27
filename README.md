@@ -2,7 +2,7 @@
 
 A self-hostable **verifying LLM gateway** — a drop-in, OpenAI-compatible proxy that **routes** (cheapest capable model + fallback), **semantically caches**, and **verifies** (deterministic guardrails inline + a local Ollama judge) every LLM call, with full OpenTelemetry tracing. Unlike after-the-fact observability tools, it can flag or block a bad response _before it returns_.
 
-> 🚧 **Early development.** Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md). Currently at **Phase 4 — routing, fallback & rate-limit survival** (inline verification lands in later phases).
+> 🚧 **Early development.** Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md). Currently at **Phase 5 — verification: guardrails + judge** (a quality dashboard lands next).
 
 ## What works today (Phase 1)
 
@@ -114,6 +114,16 @@ Sentinel survives flaky providers and free-tier rate limits instead of passing t
 - **Cost-aware routing (opt-in).** Send `"model": "auto"` and a rules-based classifier picks the **cheapest capable tier** from `routing.tiers` (cheapest first) by prompt complexity, escalating to more capable tiers on failure. Explicit model names behave exactly as before — plus the fallback chain. Drop-in semantics are preserved; nothing is configured by default.
 
 Every routed request records which provider/model actually served it, whether a fallback was used, and the retry count — queryable via `GET /traces?fallbackUsed=true` (and `?routedProvider=`). Streaming requests fail over up to the first chunk; once the SSE response is committed, a mid-stream error is surfaced as an inline event.
+
+## Verification
+
+Sentinel can check a response's quality **in the request path**, not just after the fact. Enable with `VERIFY_ENABLED=true` and/or `JUDGE_ENABLED=true`; both are off by default.
+
+- **Inline guardrails (deterministic, fail-closed).** On non-streaming responses, Sentinel checks JSON validity and schema match (when the request asked for JSON), plus a policy/PII engine — emails, Luhn-checked cards, SSNs, phone numbers, IPs, API-key-like tokens, a configurable content blocklist, and refusal detection (configured under `guardrails` in `sentinel.config.json`). A violation is **flagged** by default (recorded, response still returned); set `GUARDRAILS_BLOCK=true` to return **422** instead. A guardrail that errors always **fails closed** (blocks). Traces store violation **category codes only** (e.g. `pii.email`) — never the matched value.
+- **Async LLM judge (sampled).** A fraction (`JUDGE_SAMPLE_RATE`) of responses are scored 1–5 with a short reason by a local Ollama model (`JUDGE_MODEL`), **out of band** — it never adds latency to the response. The response under review is wrapped as untrusted data so it can't talk the judge into a pass; a judge failure is recorded as "unscored", never a pass.
+- **Regression tracking.** Each request carries a model-independent **prompt fingerprint**, so `GET /regression` groups judge scores by `(prompt, model)` — compare the groups sharing a fingerprint to see how one prompt's quality differs across models or versions.
+
+Verdicts are queryable: `GET /traces?guardrailStatus=block`, `?judgeScoreMax=2`, `?promptFingerprint=…`. Inline guardrails apply to non-streaming responses; streamed responses are judged from their buffered output after they complete.
 
 ## Development
 

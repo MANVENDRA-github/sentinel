@@ -88,6 +88,9 @@ describe('TraceStoreSpanExporter', () => {
       record() {
         throw new Error('disk full');
       },
+      attachVerdict() {
+        // no-op
+      },
       query: () => [],
       get: () => undefined,
       close() {

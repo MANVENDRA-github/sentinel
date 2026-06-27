@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import type { TraceQuery, TraceRecord, TraceStore } from './trace.js';
+import type { TraceQuery, TraceRecord, TraceStore, VerdictUpdate } from './trace.js';
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS traces (
@@ -21,13 +21,21 @@ const SCHEMA = `
     routed_provider TEXT,
     routed_model TEXT,
     fallback_used INTEGER NOT NULL DEFAULT 0,
-    retry_count INTEGER NOT NULL DEFAULT 0
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    guardrail_status TEXT,
+    guardrail_violations TEXT,
+    judge_score REAL,
+    judge_reason TEXT,
+    judge_error TEXT,
+    prompt_fingerprint TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces (timestamp);
   CREATE INDEX IF NOT EXISTS idx_traces_model ON traces (model);
   CREATE INDEX IF NOT EXISTS idx_traces_status ON traces (status);
   CREATE INDEX IF NOT EXISTS idx_traces_cache_hit ON traces (cache_hit);
   CREATE INDEX IF NOT EXISTS idx_traces_fallback_used ON traces (fallback_used);
+  CREATE INDEX IF NOT EXISTS idx_traces_guardrail_status ON traces (guardrail_status);
+  CREATE INDEX IF NOT EXISTS idx_traces_prompt_fingerprint ON traces (prompt_fingerprint);
 `;
 
 interface TraceRow {
@@ -50,6 +58,12 @@ interface TraceRow {
   routed_model: string | null;
   fallback_used: number;
   retry_count: number;
+  guardrail_status: string | null;
+  guardrail_violations: string | null;
+  judge_score: number | null;
+  judge_reason: string | null;
+  judge_error: string | null;
+  prompt_fingerprint: string | null;
 }
 
 /** SQLite-backed trace store (better-sqlite3, synchronous). Pass ':memory:' for tests. */
@@ -68,11 +82,15 @@ export class SqliteTraceStore implements TraceStore {
         `INSERT OR REPLACE INTO traces
            (id, trace_id, timestamp, duration_ms, model, provider, stream, status,
             prompt_tokens, completion_tokens, total_tokens, error_type, error_message, api_key_hash,
-            cache_hit, routed_provider, routed_model, fallback_used, retry_count)
+            cache_hit, routed_provider, routed_model, fallback_used, retry_count,
+            guardrail_status, guardrail_violations, judge_score, judge_reason, judge_error,
+            prompt_fingerprint)
          VALUES
            (@id, @traceId, @timestamp, @durationMs, @model, @provider, @stream, @status,
             @promptTokens, @completionTokens, @totalTokens, @errorType, @errorMessage, @apiKeyHash,
-            @cacheHit, @routedProvider, @routedModel, @fallbackUsed, @retryCount)`,
+            @cacheHit, @routedProvider, @routedModel, @fallbackUsed, @retryCount,
+            @guardrailStatus, @guardrailViolations, @judgeScore, @judgeReason, @judgeError,
+            @promptFingerprint)`,
       )
       .run({
         id: trace.id,
@@ -94,6 +112,26 @@ export class SqliteTraceStore implements TraceStore {
         routedModel: trace.routedModel,
         fallbackUsed: trace.fallbackUsed ? 1 : 0,
         retryCount: trace.retryCount,
+        guardrailStatus: trace.guardrailStatus,
+        guardrailViolations: trace.guardrailViolations,
+        judgeScore: trace.judgeScore,
+        judgeReason: trace.judgeReason,
+        judgeError: trace.judgeError,
+        promptFingerprint: trace.promptFingerprint,
+      });
+  }
+
+  attachVerdict(id: string, verdict: VerdictUpdate): void {
+    this.db
+      .prepare(
+        `UPDATE traces SET judge_score = @judgeScore, judge_reason = @judgeReason,
+           judge_error = @judgeError WHERE id = @id`,
+      )
+      .run({
+        id,
+        judgeScore: verdict.judgeScore,
+        judgeReason: verdict.judgeReason,
+        judgeError: verdict.judgeError,
       });
   }
 
@@ -135,6 +173,22 @@ export class SqliteTraceStore implements TraceStore {
     if (filter.fallbackUsed !== undefined) {
       where.push('fallback_used = @fallbackUsed');
       params.fallbackUsed = filter.fallbackUsed ? 1 : 0;
+    }
+    if (filter.guardrailStatus !== undefined) {
+      where.push('guardrail_status = @guardrailStatus');
+      params.guardrailStatus = filter.guardrailStatus;
+    }
+    if (filter.judgeScoreMin !== undefined) {
+      where.push('judge_score >= @judgeScoreMin');
+      params.judgeScoreMin = filter.judgeScoreMin;
+    }
+    if (filter.judgeScoreMax !== undefined) {
+      where.push('judge_score <= @judgeScoreMax');
+      params.judgeScoreMax = filter.judgeScoreMax;
+    }
+    if (filter.promptFingerprint !== undefined) {
+      where.push('prompt_fingerprint = @promptFingerprint');
+      params.promptFingerprint = filter.promptFingerprint;
     }
     params.limit = filter.limit ?? 50;
     params.offset = filter.offset ?? 0;
@@ -178,5 +232,11 @@ function rowToRecord(row: TraceRow): TraceRecord {
     routedModel: row.routed_model,
     fallbackUsed: row.fallback_used === 1,
     retryCount: row.retry_count,
+    guardrailStatus: row.guardrail_status,
+    guardrailViolations: row.guardrail_violations,
+    judgeScore: row.judge_score,
+    judgeReason: row.judge_reason,
+    judgeError: row.judge_error,
+    promptFingerprint: row.prompt_fingerprint,
   };
 }
