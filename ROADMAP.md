@@ -2,6 +2,8 @@
 
 A modular, sequential build. **Work one phase at a time.** Each phase is sized to fit a single LLM context window: it names the *only* files/dirs you should load and change, ships something runnable, and has explicit exit criteria. Do not start phase N+1 until phase N's exit criteria are green and merged.
 
+> **Status — 2026-06-28: COMPLETE.** All build phases (0–7) are done and shipped as **[v0.1.0](https://github.com/MANVENDRA-github/sentinel/releases/tag/v0.1.0)**. Two places the build diverged from this original blueprint: Phase 7's load test is a self-contained **Node harness** (`pnpm load`) rather than k6 — the local Ollama is broken, so it runs against mock upstreams — and it shipped as **v0.1.0**, not v1.0. Phase 8 (fine-tuned judge) remains optional/deferred. Measured numbers live in `PRP_SPEC.md` §5 and the README's Benchmarks section.
+
 > For each phase: read `PRP_SPEC.md` (capability IDs C1–C8), fill `PLAN_TEMPLATE.md`, follow `TEST_CONTRACT.md` (test-first), and log any high-risk work in `SECURITY_REVIEW_LOG.md`.
 
 ---
