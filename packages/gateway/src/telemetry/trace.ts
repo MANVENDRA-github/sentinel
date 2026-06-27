@@ -18,6 +18,14 @@ export interface TraceRecord {
   errorMessage: string | null;
   apiKeyHash: string | null;
   cacheHit: boolean;
+  /** Provider that actually served the response (after routing/fallback). */
+  routedProvider: string | null;
+  /** Model that actually served the response (e.g. the tier chosen for `auto`). */
+  routedModel: string | null;
+  /** A non-primary candidate served the request. */
+  fallbackUsed: boolean;
+  /** Retries spent before the request succeeded. */
+  retryCount: number;
 }
 
 /** Filters for querying traces (all optional). */
@@ -29,6 +37,8 @@ export interface TraceQuery {
   since?: number;
   until?: number;
   cacheHit?: boolean;
+  routedProvider?: string;
+  fallbackUsed?: boolean;
   limit?: number;
   offset?: number;
 }
@@ -74,5 +84,9 @@ export function spanToTraceRecord(span: ReadableSpan): TraceRecord {
     errorMessage: isError ? (span.status.message ?? null) : null,
     apiKeyHash: asString(attrs['sentinel.api_key_hash']),
     cacheHit: attrs['sentinel.cache_hit'] === true,
+    routedProvider: asString(attrs['sentinel.routed_provider']),
+    routedModel: asString(attrs['sentinel.routed_model']),
+    fallbackUsed: attrs['sentinel.fallback_used'] === true,
+    retryCount: asNumber(attrs['sentinel.retry_count']) ?? 0,
   };
 }

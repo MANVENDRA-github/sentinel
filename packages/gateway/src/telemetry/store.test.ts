@@ -21,6 +21,10 @@ function sample(over: Partial<TraceRecord> = {}): TraceRecord {
     errorMessage: null,
     apiKeyHash: 'abc',
     cacheHit: false,
+    routedProvider: 'openai',
+    routedModel: 'gpt-4o-mini',
+    fallbackUsed: false,
+    retryCount: 0,
     ...over,
   };
 }
@@ -62,6 +66,16 @@ for (const [name, makeStore] of backends) {
       store.close();
     });
 
+    it('filters by routedProvider and fallbackUsed', () => {
+      const store = makeStore();
+      store.record(sample({ id: 'a', routedProvider: 'p1', fallbackUsed: false }));
+      store.record(sample({ id: 'b', routedProvider: 'p2', fallbackUsed: true }));
+      expect(store.query({ routedProvider: 'p2' }).map((t) => t.id)).toEqual(['b']);
+      expect(store.query({ fallbackUsed: true }).map((t) => t.id)).toEqual(['b']);
+      expect(store.query({ fallbackUsed: false }).map((t) => t.id)).toEqual(['a']);
+      store.close();
+    });
+
     it('respects limit and offset', () => {
       const store = makeStore();
       for (let i = 0; i < 5; i++) store.record(sample({ id: `s${i}`, timestamp: i }));
@@ -85,6 +99,10 @@ for (const [name, makeStore] of backends) {
           errorType: 'UpstreamError',
           errorMessage: 'boom',
           apiKeyHash: null,
+          routedProvider: null,
+          routedModel: null,
+          fallbackUsed: true,
+          retryCount: 3,
         }),
       );
       const got = store.get('e');
@@ -92,6 +110,9 @@ for (const [name, makeStore] of backends) {
       expect(got?.stream).toBe(true);
       expect(got?.errorType).toBe('UpstreamError');
       expect(got?.promptTokens).toBeNull();
+      expect(got?.routedProvider).toBeNull();
+      expect(got?.fallbackUsed).toBe(true);
+      expect(got?.retryCount).toBe(3);
       store.close();
     });
   });

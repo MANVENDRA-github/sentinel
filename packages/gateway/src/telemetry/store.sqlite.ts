@@ -17,12 +17,17 @@ const SCHEMA = `
     error_type TEXT,
     error_message TEXT,
     api_key_hash TEXT,
-    cache_hit INTEGER NOT NULL DEFAULT 0
+    cache_hit INTEGER NOT NULL DEFAULT 0,
+    routed_provider TEXT,
+    routed_model TEXT,
+    fallback_used INTEGER NOT NULL DEFAULT 0,
+    retry_count INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_traces_timestamp ON traces (timestamp);
   CREATE INDEX IF NOT EXISTS idx_traces_model ON traces (model);
   CREATE INDEX IF NOT EXISTS idx_traces_status ON traces (status);
   CREATE INDEX IF NOT EXISTS idx_traces_cache_hit ON traces (cache_hit);
+  CREATE INDEX IF NOT EXISTS idx_traces_fallback_used ON traces (fallback_used);
 `;
 
 interface TraceRow {
@@ -41,6 +46,10 @@ interface TraceRow {
   error_message: string | null;
   api_key_hash: string | null;
   cache_hit: number;
+  routed_provider: string | null;
+  routed_model: string | null;
+  fallback_used: number;
+  retry_count: number;
 }
 
 /** SQLite-backed trace store (better-sqlite3, synchronous). Pass ':memory:' for tests. */
@@ -59,11 +68,11 @@ export class SqliteTraceStore implements TraceStore {
         `INSERT OR REPLACE INTO traces
            (id, trace_id, timestamp, duration_ms, model, provider, stream, status,
             prompt_tokens, completion_tokens, total_tokens, error_type, error_message, api_key_hash,
-            cache_hit)
+            cache_hit, routed_provider, routed_model, fallback_used, retry_count)
          VALUES
            (@id, @traceId, @timestamp, @durationMs, @model, @provider, @stream, @status,
             @promptTokens, @completionTokens, @totalTokens, @errorType, @errorMessage, @apiKeyHash,
-            @cacheHit)`,
+            @cacheHit, @routedProvider, @routedModel, @fallbackUsed, @retryCount)`,
       )
       .run({
         id: trace.id,
@@ -81,6 +90,10 @@ export class SqliteTraceStore implements TraceStore {
         errorMessage: trace.errorMessage,
         apiKeyHash: trace.apiKeyHash,
         cacheHit: trace.cacheHit ? 1 : 0,
+        routedProvider: trace.routedProvider,
+        routedModel: trace.routedModel,
+        fallbackUsed: trace.fallbackUsed ? 1 : 0,
+        retryCount: trace.retryCount,
       });
   }
 
@@ -114,6 +127,14 @@ export class SqliteTraceStore implements TraceStore {
     if (filter.cacheHit !== undefined) {
       where.push('cache_hit = @cacheHit');
       params.cacheHit = filter.cacheHit ? 1 : 0;
+    }
+    if (filter.routedProvider !== undefined) {
+      where.push('routed_provider = @routedProvider');
+      params.routedProvider = filter.routedProvider;
+    }
+    if (filter.fallbackUsed !== undefined) {
+      where.push('fallback_used = @fallbackUsed');
+      params.fallbackUsed = filter.fallbackUsed ? 1 : 0;
     }
     params.limit = filter.limit ?? 50;
     params.offset = filter.offset ?? 0;
@@ -153,5 +174,9 @@ function rowToRecord(row: TraceRow): TraceRecord {
     errorMessage: row.error_message,
     apiKeyHash: row.api_key_hash,
     cacheHit: row.cache_hit === 1,
+    routedProvider: row.routed_provider,
+    routedModel: row.routed_model,
+    fallbackUsed: row.fallback_used === 1,
+    retryCount: row.retry_count,
   };
 }

@@ -8,6 +8,7 @@ import { initTelemetry } from './telemetry/otel.js';
 import { createOllamaEmbedder } from './cache/embedder.js';
 import { createSemanticCache } from './cache/cache.js';
 import type { SemanticCache } from './cache/cache.js';
+import { createBucketRegistry } from './throttle/token-bucket.js';
 
 async function main(): Promise<void> {
   const env = loadServerEnv(process.env);
@@ -29,12 +30,25 @@ async function main(): Promise<void> {
     });
   }
 
+  const rpmByProvider: Record<string, number> = {};
+  for (const provider of config.providers.values()) {
+    if (provider.rpm !== undefined) rpmByProvider[provider.name] = provider.rpm;
+  }
+  const throttle = createBucketRegistry({ rpmByProvider, defaultRpm: env.defaultRpm });
+
   const app = buildServer({
     registry,
     apiKeys: env.apiKeys,
     traceStore: store,
     adminKey: env.adminKey,
     cache,
+    routing: {
+      config: config.routing,
+      maxRetries: env.maxRetries,
+      timeoutMs: env.requestTimeoutMs,
+      maxWaitMs: env.throttleMaxWaitMs,
+      throttle,
+    },
   });
 
   const shutdown = async (): Promise<void> => {

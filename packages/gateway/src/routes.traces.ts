@@ -40,6 +40,8 @@ function parseTraceQuery(raw: unknown): TraceQuery {
   if (q.since !== undefined) query.since = Number(q.since);
   if (q.until !== undefined) query.until = Number(q.until);
   if (q.cacheHit !== undefined) query.cacheHit = q.cacheHit === 'true';
+  if (q.routedProvider !== undefined) query.routedProvider = q.routedProvider;
+  if (q.fallbackUsed !== undefined) query.fallbackUsed = q.fallbackUsed === 'true';
   if (q.limit !== undefined) query.limit = Math.min(Number(q.limit), 500);
   if (q.offset !== undefined) query.offset = Number(q.offset);
   return query;

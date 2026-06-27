@@ -34,5 +34,8 @@ function matches(trace: TraceRecord, filter: TraceQuery): boolean {
   if (filter.since !== undefined && trace.timestamp < filter.since) return false;
   if (filter.until !== undefined && trace.timestamp > filter.until) return false;
   if (filter.cacheHit !== undefined && trace.cacheHit !== filter.cacheHit) return false;
+  if (filter.routedProvider !== undefined && trace.routedProvider !== filter.routedProvider)
+    return false;
+  if (filter.fallbackUsed !== undefined && trace.fallbackUsed !== filter.fallbackUsed) return false;
   return true;
 }
