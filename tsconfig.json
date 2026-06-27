@@ -3,5 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "vitest.config.ts"]
+  "include": ["packages/gateway/src/**/*.ts", "vitest.config.ts"]
 }

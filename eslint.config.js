@@ -24,6 +24,17 @@ export default tseslint.config(
     },
   },
   {
+    // Dashboard React components (browser, JSX). Default exports allowed for entry/lazy chunks.
+    files: ['**/*.tsx'],
+    extends: [...tseslint.configs.strict, ...tseslint.configs.stylistic],
+    rules: {
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
     // Tooling config files conventionally require a default export.
     files: ['**/*.config.ts'],
     rules: { 'no-restricted-syntax': 'off' },
