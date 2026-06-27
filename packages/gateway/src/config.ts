@@ -26,6 +26,7 @@ export interface ServerEnv {
   judgeEnabled: boolean;
   judgeModel: string;
   judgeSampleRate: number;
+  clientRpm: number;
 }
 
 const serverEnvSchema = z.object({
@@ -62,6 +63,7 @@ const serverEnvSchema = z.object({
     .transform((v) => v === 'true'),
   JUDGE_MODEL: z.string().default('qwen2.5:7b'),
   JUDGE_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.1),
+  CLIENT_RPM: z.coerce.number().int().nonnegative().default(0),
 });
 
 /** Reads and validates the process environment Sentinel needs to run. */
@@ -98,6 +100,7 @@ export function loadServerEnv(env: NodeJS.ProcessEnv): ServerEnv {
     judgeEnabled: parsed.data.JUDGE_ENABLED,
     judgeModel: parsed.data.JUDGE_MODEL,
     judgeSampleRate: parsed.data.JUDGE_SAMPLE_RATE,
+    clientRpm: parsed.data.CLIENT_RPM,
   };
 }
 

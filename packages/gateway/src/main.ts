@@ -38,6 +38,8 @@ async function main(): Promise<void> {
     if (provider.rpm !== undefined) rpmByProvider[provider.name] = provider.rpm;
   }
   const throttle = createBucketRegistry({ rpmByProvider, defaultRpm: env.defaultRpm });
+  const clientThrottle =
+    env.clientRpm > 0 ? createBucketRegistry({ defaultRpm: env.clientRpm }) : undefined;
 
   let verifier: Verifier | undefined;
   if (env.verifyEnabled || env.judgeEnabled) {
@@ -61,6 +63,7 @@ async function main(): Promise<void> {
     traceStore: store,
     adminKey: env.adminKey,
     cache,
+    ...(clientThrottle ? { clientThrottle } : {}),
     routing: {
       config: config.routing,
       maxRetries: env.maxRetries,
