@@ -28,6 +28,24 @@ describe('loadServerEnv', () => {
   it('throws when PORT is not a positive integer', () => {
     expect(() => loadServerEnv({ SENTINEL_API_KEYS: 'k', PORT: 'abc' })).toThrow(ConfigError);
   });
+
+  it('reads admin key and trace DB settings', () => {
+    const env = loadServerEnv({
+      SENTINEL_API_KEYS: 'k',
+      SENTINEL_ADMIN_KEY: 'admin',
+      TRACE_DB: 'memory',
+      TRACE_DB_PATH: '/tmp/t.db',
+    });
+    expect(env.adminKey).toBe('admin');
+    expect(env.traceDb).toBe('memory');
+    expect(env.traceDbPath).toBe('/tmp/t.db');
+  });
+
+  it('defaults trace DB to sqlite and admin key to undefined', () => {
+    const env = loadServerEnv({ SENTINEL_API_KEYS: 'k' });
+    expect(env.traceDb).toBe('sqlite');
+    expect(env.adminKey).toBeUndefined();
+  });
 });
 
 const validConfig = JSON.stringify({

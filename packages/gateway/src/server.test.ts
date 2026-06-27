@@ -1,8 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { trace } from '@opentelemetry/api';
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { buildServer } from './server.js';
 import type { ProviderRegistry } from './providers/registry.js';
 import type { Provider } from './providers/types.js';
 import { ModelNotFoundError, UpstreamError } from './errors.js';
+import { InMemoryTraceStore } from './telemetry/store.memory.js';
+import type { TraceStore } from './telemetry/trace.js';
+import { TraceStoreSpanExporter } from './telemetry/exporter.js';
 
 function makeProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -25,8 +31,17 @@ function makeRegistry(provider: Provider, opts: { unknownModel?: boolean } = {})
   };
 }
 
-function buildTestServer(registry: ProviderRegistry) {
-  return buildServer({ registry, apiKeys: new Set(['good']), logger: false });
+function buildTestServer(
+  registry: ProviderRegistry,
+  opts: { store?: TraceStore; adminKey?: string } = {},
+) {
+  return buildServer({
+    registry,
+    apiKeys: new Set(['good']),
+    logger: false,
+    traceStore: opts.store ?? new InMemoryTraceStore(),
+    adminKey: opts.adminKey,
+  });
 }
 
 const body = { model: 'm', messages: [{ role: 'user', content: 'hi' }] };
@@ -140,7 +155,12 @@ describe('POST /v1/chat/completions', () => {
         throw new Error('boom');
       },
     };
-    const app = buildServer({ registry, apiKeys: new Set(['good']), logger: false });
+    const app = buildServer({
+      registry,
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: new InMemoryTraceStore(),
+    });
     const res = await app.inject({ method: 'POST', url, headers: auth, payload: body });
     expect(res.statusCode).toBe(500);
     expect(res.json().error.type).toBe('internal_error');
@@ -148,7 +168,11 @@ describe('POST /v1/chat/completions', () => {
   });
 
   it('uses a redacting logger by default', async () => {
-    const app = buildServer({ registry: makeRegistry(makeProvider()), apiKeys: new Set(['good']) });
+    const app = buildServer({
+      registry: makeRegistry(makeProvider()),
+      apiKeys: new Set(['good']),
+      traceStore: new InMemoryTraceStore(),
+    });
     const res = await app.inject({ method: 'POST', url, headers: auth, payload: body });
     expect(res.statusCode).toBe(200);
     await app.close();
@@ -182,6 +206,136 @@ describe('POST /v1/chat/completions', () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.body).toContain('internal_error');
+    await app.close();
+  });
+});
+
+describe('tracing & /traces', () => {
+  const sink = new InMemoryTraceStore();
+  let provider: NodeTracerProvider | undefined;
+
+  beforeAll(() => {
+    provider = new NodeTracerProvider({
+      spanProcessors: [new SimpleSpanProcessor(new TraceStoreSpanExporter(sink))],
+    });
+    provider.register();
+  });
+
+  afterAll(async () => {
+    trace.disable();
+    await provider?.shutdown();
+  });
+
+  it('records a trace for a completed request', async () => {
+    const chatProvider = makeProvider({
+      chat: () =>
+        Promise.resolve({
+          id: 'cmpl',
+          choices: [],
+          usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 },
+        }),
+    });
+    const app = buildTestServer(makeRegistry(chatProvider), { store: sink });
+    await app.inject({ method: 'POST', url, headers: auth, payload: body });
+    await app.close();
+
+    const traces = sink.query();
+    expect(traces.length).toBeGreaterThanOrEqual(1);
+    const last = traces[0];
+    expect(last?.model).toBe('m');
+    expect(last?.provider).toBe('fake');
+    expect(last?.status).toBe(200);
+    expect(last?.promptTokens).toBe(5);
+    expect(last?.completionTokens).toBe(7);
+  });
+
+  it('requires the admin key on /traces', async () => {
+    const app = buildTestServer(makeRegistry(makeProvider()), {
+      store: sink,
+      adminKey: 'admin-secret',
+    });
+    const noKey = await app.inject({ method: 'GET', url: '/traces' });
+    expect(noKey.statusCode).toBe(401);
+    const wrong = await app.inject({
+      method: 'GET',
+      url: '/traces',
+      headers: { authorization: 'Bearer nope' },
+    });
+    expect(wrong.statusCode).toBe(401);
+    const ok = await app.inject({
+      method: 'GET',
+      url: '/traces',
+      headers: { authorization: 'Bearer admin-secret' },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(Array.isArray(ok.json())).toBe(true);
+    await app.close();
+  });
+
+  it('serves a single trace by id and 404s unknown ids', async () => {
+    const seeded = new InMemoryTraceStore();
+    seeded.record({
+      id: 'span-xyz',
+      traceId: 't',
+      timestamp: 1,
+      durationMs: 1,
+      model: 'm',
+      provider: 'p',
+      stream: false,
+      status: 200,
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      errorType: null,
+      errorMessage: null,
+      apiKeyHash: null,
+    });
+    const app = buildTestServer(makeRegistry(makeProvider()), {
+      store: seeded,
+      adminKey: 'admin-secret',
+    });
+    const found = await app.inject({
+      method: 'GET',
+      url: '/traces/span-xyz',
+      headers: { authorization: 'Bearer admin-secret' },
+    });
+    expect(found.statusCode).toBe(200);
+    expect(found.json().id).toBe('span-xyz');
+    const missing = await app.inject({
+      method: 'GET',
+      url: '/traces/nope',
+      headers: { authorization: 'Bearer admin-secret' },
+    });
+    expect(missing.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('applies query filters on /traces', async () => {
+    const store = new InMemoryTraceStore();
+    const base = {
+      traceId: 't',
+      durationMs: 1,
+      provider: 'p',
+      promptTokens: null,
+      completionTokens: null,
+      totalTokens: null,
+      errorType: null,
+      errorMessage: null,
+      apiKeyHash: null,
+    };
+    store.record({ ...base, id: 's1', timestamp: 100, model: 'm1', stream: false, status: 200 });
+    store.record({ ...base, id: 's2', timestamp: 200, model: 'm2', stream: true, status: 500 });
+    const app = buildTestServer(makeRegistry(makeProvider()), { store, adminKey: 'admin-secret' });
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/traces?model=m2&status=500&stream=true&since=150&until=250&limit=10&offset=0',
+      headers: { authorization: 'Bearer admin-secret' },
+    });
+    expect(res.statusCode).toBe(200);
+    const rows = res.json() as { id: string }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe('s2');
     await app.close();
   });
 });

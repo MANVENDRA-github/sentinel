@@ -8,12 +8,18 @@ export interface ServerEnv {
   port: number;
   apiKeys: ReadonlySet<string>;
   configPath: string;
+  adminKey: string | undefined;
+  traceDb: 'sqlite' | 'memory';
+  traceDbPath: string;
 }
 
 const serverEnvSchema = z.object({
   PORT: z.coerce.number().int().positive().default(8080),
   SENTINEL_API_KEYS: z.string().default(''),
   SENTINEL_CONFIG: z.string().default('./sentinel.config.json'),
+  SENTINEL_ADMIN_KEY: z.string().optional(),
+  TRACE_DB: z.enum(['sqlite', 'memory']).default('sqlite'),
+  TRACE_DB_PATH: z.string().default('./traces.db'),
 });
 
 /** Reads and validates the process environment Sentinel needs to run. */
@@ -32,6 +38,9 @@ export function loadServerEnv(env: NodeJS.ProcessEnv): ServerEnv {
     port: parsed.data.PORT,
     apiKeys: new Set(apiKeys),
     configPath: parsed.data.SENTINEL_CONFIG,
+    adminKey: parsed.data.SENTINEL_ADMIN_KEY,
+    traceDb: parsed.data.TRACE_DB,
+    traceDbPath: parsed.data.TRACE_DB_PATH,
   };
 }
 

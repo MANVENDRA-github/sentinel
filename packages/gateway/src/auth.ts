@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { AuthError } from './errors.js';
 
 /** Extracts the bearer token from an Authorization header, or null if absent/malformed. */
@@ -21,4 +22,19 @@ export function createAuthHook(apiKeys: ReadonlySet<string>) {
       throw new AuthError();
     }
   };
+}
+
+/** Builds a preHandler that requires the configured admin key (for trace/admin endpoints). */
+export function createAdminAuthHook(adminKey: string | undefined) {
+  return async function adminAuthHook(request: RequestWithAuth): Promise<void> {
+    const token = extractBearerToken(request.headers.authorization);
+    if (adminKey === undefined || adminKey.length === 0 || token !== adminKey) {
+      throw new AuthError('Admin access required');
+    }
+  };
+}
+
+/** SHA-256 hex digest of an API key, so raw keys are never persisted in traces. */
+export function hashApiKey(key: string): string {
+  return createHash('sha256').update(key).digest('hex');
 }

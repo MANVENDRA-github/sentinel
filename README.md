@@ -2,7 +2,7 @@
 
 A self-hostable **verifying LLM gateway** — a drop-in, OpenAI-compatible proxy that **routes** (cheapest capable model + fallback), **semantically caches**, and **verifies** (deterministic guardrails inline + a local Ollama judge) every LLM call, with full OpenTelemetry tracing. Unlike after-the-fact observability tools, it can flag or block a bad response _before it returns_.
 
-> 🚧 **Early development.** Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md). Currently at **Phase 1 — the pass-through proxy** (routing, caching, and verification land in later phases).
+> 🚧 **Early development.** Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md). Currently at **Phase 2 — tracing & persistence** (routing, caching, and verification land in later phases).
 
 ## What works today (Phase 1)
 
@@ -82,6 +82,20 @@ Because almost every provider speaks the OpenAI API, **bringing your own key is 
 ### Bring your own Ollama
 
 Sentinel never hardcodes a machine or a model. Set `OLLAMA_BASE_URL` in `.env` to point at _your_ Ollama (default `http://localhost:11434/v1`), list the models you've pulled in the `models` map, and you're set. The local **judge** that verifies outputs in a later phase works the same way — it reads `JUDGE_MODEL` from your environment, so every clone uses its own local model, with no API key and no quota.
+
+## Observability
+
+Every request is traced with OpenTelemetry — provider, model, status, latency, and token usage — and persisted to a queryable store (SQLite by default; set `TRACE_DB=memory` for an ephemeral one). Spans also export to any OTLP collector (Jaeger, etc.) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+
+Read recent traces through the admin-gated API (set `SENTINEL_ADMIN_KEY` to enable it):
+
+```bash
+curl http://localhost:8080/traces \
+  -H "authorization: Bearer $SENTINEL_ADMIN_KEY"
+# filters: ?model=gpt-4o-mini&status=200&stream=true&since=<epoch-ms>&limit=50
+```
+
+Traces are **metadata only** — no prompt or response bodies are stored, and API keys are recorded as a SHA-256 hash, never in the clear.
 
 ## Development
 
