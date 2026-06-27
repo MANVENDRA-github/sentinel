@@ -1,10 +1,14 @@
 # Sentinel
 
+[![CI](https://github.com/MANVENDRA-github/sentinel/actions/workflows/ci.yml/badge.svg)](https://github.com/MANVENDRA-github/sentinel/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522-339933.svg)](./package.json)
+
 A self-hostable **verifying LLM gateway** — a drop-in, OpenAI-compatible proxy that **routes** (cheapest capable model + fallback), **semantically caches**, and **verifies** (deterministic guardrails inline + a local Ollama judge) every LLM call, with full OpenTelemetry tracing. Unlike after-the-fact observability tools, it can flag or block a bad response _before it returns_.
 
-> 🚧 **Early development.** Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md). The gateway is feature-complete (proxy, tracing, cache, routing, verification) and now ships a **Phase 6** dashboard; hardening + launch (Phase 7) is next.
+> **v0.1.0 — feature-complete and hardened.** All seven build phases are done: drop-in proxy, OpenTelemetry tracing, semantic cache, routing / fallback / rate-limit survival, in-path verification (guardrails + a local judge), a React dashboard, and security hardening with a reproducible load harness. Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md).
 
-## What works today (Phase 1)
+## What it does
 
 A drop-in, OpenAI-compatible `POST /v1/chat/completions` endpoint (streaming and non-streaming) that authenticates callers, validates requests, and forwards them to **any OpenAI-compatible provider** you configure — OpenAI, Groq, Mistral, OpenRouter, DeepSeek, xAI, Google Gemini (via its OpenAI endpoint), or a local **Ollama** model. Point your existing OpenAI SDK at Sentinel by changing one line: the base URL.
 
@@ -129,6 +133,8 @@ Verdicts are queryable: `GET /traces?guardrailStatus=block`, `?judgeScoreMax=2`,
 
 A read-only **React + Vite** dashboard (`packages/dashboard`) visualizes the trace API: request volume over time, error / cache-hit / fallback rates, latency p95, token usage, provider / model / status distributions, a judge-score histogram, guardrail breakdown, a recent-requests table, and quality regressions. It aggregates client-side from `GET /traces` + `GET /regression`, so it needs only your gateway's `SENTINEL_ADMIN_KEY`.
 
+![The Sentinel dashboard — trace volume over time, latency and error / cache-hit / fallback rates, token usage, provider and model distributions, judge-score histogram, and guardrail breakdown.](./docs/dashboard.png)
+
 ```bash
 pnpm dev                # gateway on :8080 (set SENTINEL_ADMIN_KEY to enable the admin API)
 pnpm dev:dashboard      # dashboard on :5173 (dev-proxies the admin API to :8080)
@@ -136,12 +142,34 @@ pnpm dev:dashboard      # dashboard on :5173 (dev-proxies the admin API to :8080
 
 Open <http://localhost:5173>, paste your admin key, and hit Refresh. The dashboard is end-to-end tested with Playwright (`pnpm test:e2e`).
 
+## Benchmarks
+
+Real numbers from the bundled load harness (`pnpm load` spins up a mock upstream and the gateway in-process and drives the cache / fallback / guardrail paths — full method and honest caveats in [`load/RESULTS.md`](./load/RESULTS.md)):
+
+| Metric | Result |
+|---|---|
+| **Cost reduction** (50%-repeat workload) | **50%** — 100 of 200 requests served from the semantic cache with zero upstream calls |
+| **Unhandled 429s** to the client | **0** — all 50 requests to an always-429 upstream were retried and failed over to a healthy provider |
+| **Guardrail catch-rate** (injected PII) | **100%** — 50 of 50 bad responses blocked in-path |
+| **Added overhead** (Sentinel's own time) | **~14 ms p99** (p50 ~7.5 ms) against a near-instant mock upstream |
+
+Framing, stated plainly: overhead is Sentinel's _own_ per-request cost, not a model's latency; cost-reduction scales with your traffic's repeat rate; and the catch-rate is the deterministic guardrail rate — the async LLM judge needs a real model and is covered by the unit tests. Reproduce it all with `pnpm load`.
+
 ## Development
 
 ```bash
 pnpm verify       # typecheck + lint + tests with coverage (the pre-PR gate)
 pnpm test:watch   # tests in watch mode
 pnpm dev          # run the gateway with reload
+pnpm load         # run the load harness → load/RESULTS.md
 ```
 
 See [`CLAUDE.md`](./CLAUDE.md) for the full command list, coding standards, and contribution workflow, and [`ROADMAP.md`](./ROADMAP.md) for what's next.
+
+## Contributing
+
+Contributions are welcome. Start with [`CLAUDE.md`](./CLAUDE.md) — it documents the architecture, the coding standards (strict TypeScript, named exports, the `pnpm verify` gate), the security-review discipline ([`SECURITY_REVIEW_LOG.md`](./SECURITY_REVIEW_LOG.md)), and the phase-based workflow. For anything non-trivial, open an issue to discuss it before a large PR.
+
+## License
+
+[MIT](./LICENSE) © 2026 Manvendra
