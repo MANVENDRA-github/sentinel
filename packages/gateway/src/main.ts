@@ -3,12 +3,32 @@ import { loadServerEnv, loadConfig } from './config.js';
 import { createRegistry } from './providers/registry.js';
 import { buildServer } from './server.js';
 import { ConfigError } from './errors.js';
+import { createTraceStore } from './telemetry/store.js';
+import { initTelemetry } from './telemetry/otel.js';
 
 async function main(): Promise<void> {
   const env = loadServerEnv(process.env);
   const config = loadConfig({ path: env.configPath, env: process.env });
   const registry = createRegistry(config);
-  const app = buildServer({ registry, apiKeys: env.apiKeys });
+  const store = createTraceStore({ kind: env.traceDb, path: env.traceDbPath });
+  const shutdownTelemetry = initTelemetry(store, {
+    otlpEndpoint: process.env.OTEL_EXPORTER_OTLP_ENDPOINT,
+  });
+  const app = buildServer({
+    registry,
+    apiKeys: env.apiKeys,
+    traceStore: store,
+    adminKey: env.adminKey,
+  });
+
+  const shutdown = async (): Promise<void> => {
+    await app.close();
+    await shutdownTelemetry();
+    store.close();
+  };
+  process.on('SIGTERM', () => void shutdown());
+  process.on('SIGINT', () => void shutdown());
+
   await app.listen({ port: env.port, host: '0.0.0.0' });
 }
 

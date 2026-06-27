@@ -4,6 +4,7 @@
     "target": "ES2022",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
     "lib": ["ES2023"],
     "types": ["node"],
 

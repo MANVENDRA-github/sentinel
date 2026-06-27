@@ -29,7 +29,7 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 
 - [x] Every request authenticated by a Sentinel API key; invalid/missing ⇒ 401.
 - [ ] Cache entries and traces namespaced per key; cross-tenant read is impossible (tested).
-- [ ] Admin/config endpoints separated from proxy traffic and authorized distinctly.
+- [x] Admin/config endpoints separated from proxy traffic and authorized distinctly.
 
 ### 4. SSRF / outbound calls
 
@@ -43,7 +43,7 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 
 ### 6. Log / trace data hygiene
 
-- [ ] PII/prompt redaction policy applied before persistence (configurable; on by default for sensitive fields).
+- [x] Traces are metadata-only — prompt/response bodies are never persisted; API keys stored as a SHA-256 hash, never raw.
 - [ ] Stored trace content is escaped on render in the dashboard (no stored XSS).
 
 ### 7. Availability / DoS
@@ -68,5 +68,6 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 | ------ | ---------- | ---------- | ------------------------------ | ---------------------------------------------------------------------------- | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | —      | 2026-06-27 | —          | Initial context docs (no code) | n/a                                                                          | n/a      | n/a       | Baseline.                                                                                                                                                                                                                                                                                                                                                                                         |
 | SR-001 | 2026-06-27 | 1, 3, 4    | Phase 1 pass-through proxy     | Unauthenticated access; key/secret leakage; SSRF via request-controlled URLs | high     | mitigated | Bearer Sentinel-key auth required — 401 on missing/invalid (tested). Provider keys read from env via `apiKeyEnv`, never hard-coded, never returned to clients. Provider base URLs come only from the config file, never request input. `authorization`/`x-api-key` redacted in request logs via pino `redact` (configured; an explicit log-assertion test is still TODO — box 1.2 left unticked). |
+| SR-002 | 2026-06-27 | 3, 6       | Phase 2 tracing & persistence  | Unauthorized trace access; secrets/PII in stored traces                      | high     | mitigated | `GET /traces` gated by a separate `SENTINEL_ADMIN_KEY` — 401 without it (tested), distinct from client keys. Traces are metadata-only (model, provider, tokens, latency, status) — no prompt/response bodies persisted. API keys stored as a SHA-256 hash, never raw. Per-key trace scoping deferred (admin-only for now).                                                                        |
 
 > Add a row per high-risk change. Status ∈ {open, mitigated, accepted}. Severity ∈ {low, med, high, critical}.

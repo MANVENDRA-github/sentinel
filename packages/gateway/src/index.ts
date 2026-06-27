@@ -18,3 +18,5 @@ export {
   UpstreamError,
   ConfigError,
 } from './errors.js';
+export { createTraceStore } from './telemetry/store.js';
+export type { TraceStore, TraceRecord, TraceQuery } from './telemetry/trace.js';

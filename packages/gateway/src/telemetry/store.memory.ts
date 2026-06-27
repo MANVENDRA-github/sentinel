@@ -1,0 +1,37 @@
+import type { TraceQuery, TraceRecord, TraceStore } from './trace.js';
+
+/** In-memory trace store — used by tests and as a no-database fallback. */
+export class InMemoryTraceStore implements TraceStore {
+  private readonly traces: TraceRecord[] = [];
+
+  record(trace: TraceRecord): void {
+    this.traces.push(trace);
+  }
+
+  query(filter: TraceQuery = {}): TraceRecord[] {
+    const matched = this.traces
+      .filter((trace) => matches(trace, filter))
+      .sort((a, b) => b.timestamp - a.timestamp);
+    const offset = filter.offset ?? 0;
+    const limit = filter.limit ?? 50;
+    return matched.slice(offset, offset + limit);
+  }
+
+  get(id: string): TraceRecord | undefined {
+    return this.traces.find((trace) => trace.id === id);
+  }
+
+  close(): void {
+    // no resources to release
+  }
+}
+
+function matches(trace: TraceRecord, filter: TraceQuery): boolean {
+  if (filter.model !== undefined && trace.model !== filter.model) return false;
+  if (filter.provider !== undefined && trace.provider !== filter.provider) return false;
+  if (filter.status !== undefined && trace.status !== filter.status) return false;
+  if (filter.stream !== undefined && trace.stream !== filter.stream) return false;
+  if (filter.since !== undefined && trace.timestamp < filter.since) return false;
+  if (filter.until !== undefined && trace.timestamp > filter.until) return false;
+  return true;
+}

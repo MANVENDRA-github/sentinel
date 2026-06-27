@@ -5,8 +5,19 @@
   "type": "module",
   "description": "Sentinel gateway — the verifying LLM proxy core. (Scaffold; built out from ROADMAP Phase 1.)",
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/core": "^2.8.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.219.0",
+    "@opentelemetry/resources": "^2.8.0",
+    "@opentelemetry/sdk-trace-base": "^2.8.0",
+    "@opentelemetry/sdk-trace-node": "^2.8.0",
+    "@opentelemetry/semantic-conventions": "^1.41.1",
+    "better-sqlite3": "^11.10.0",
     "dotenv": "^17.4.2",
     "fastify": "^5.8.5",
     "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13"
   }
 }
