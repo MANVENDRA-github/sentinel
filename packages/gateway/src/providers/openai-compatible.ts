@@ -35,6 +35,8 @@ export function createOpenAICompatibleProvider(options: OpenAICompatibleOptions)
       method: 'POST',
       headers: buildHeaders(),
       body: JSON.stringify({ ...request, stream }),
+      // Don't follow upstream redirects — a malicious provider could 3xx the prompt to another host.
+      redirect: 'error',
       ...(signal ? { signal } : {}),
     });
     if (!res.ok) {

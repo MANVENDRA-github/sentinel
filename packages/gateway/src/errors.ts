@@ -85,6 +85,13 @@ export class GuardrailBlockedError extends GatewayError {
   }
 }
 
+/** A single API key exceeded its inbound request-per-minute budget. */
+export class RateLimitedError extends GatewayError {
+  constructor(message = 'Rate limit exceeded for this API key') {
+    super(429, message, 'rate_limit_error', 'rate_limited');
+  }
+}
+
 /** A startup/configuration error (not request-scoped). */
 export class ConfigError extends Error {
   constructor(message: string) {

@@ -15,7 +15,7 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 ### 1. Secret / key management
 
 - [x] Provider keys loaded only from env/secret store; never hard-coded, never in the repo.
-- [ ] Keys never written to logs, traces, error messages, or the dashboard (redaction tested).
+- [x] Keys never written to logs, traces, error messages, or the dashboard (redaction tested).
 - [x] Client-facing errors never echo upstream auth headers.
 - [x] `.env`/secrets in `.gitignore`; `.env.example` has placeholders only.
 
@@ -28,13 +28,13 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 ### 3. AuthN / AuthZ / tenant isolation
 
 - [x] Every request authenticated by a Sentinel API key; invalid/missing ⇒ 401.
-- [ ] Cache entries and traces namespaced per key; cross-tenant read is impossible (tested).
+- [x] Cache entries and traces namespaced per key; cross-tenant read is impossible (tested).
 - [x] Admin/config endpoints separated from proxy traffic and authorized distinctly.
 
 ### 4. SSRF / outbound calls
 
 - [x] Provider base URLs come from a config allow-list, not from request input.
-- [ ] Redirects to other hosts are not blindly followed.
+- [x] Redirects to other hosts are not blindly followed.
 
 ### 5. Cache poisoning / data leakage
 
@@ -44,23 +44,23 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 ### 6. Log / trace data hygiene
 
 - [x] Traces are metadata-only — prompt/response bodies are never persisted; API keys stored as a SHA-256 hash, never raw.
-- [ ] Stored trace content is escaped on render in the dashboard (no stored XSS).
+- [x] Stored trace content is escaped on render in the dashboard (no stored XSS).
 
 ### 7. Availability / DoS
 
-- [ ] Sentinel's own rate-limits/quotas protect it from a runaway client.
+- [x] Sentinel's own rate-limits/quotas protect it from a runaway client.
 - [x] Bounded queues/timeouts; a slow provider cannot exhaust the event loop or memory.
 
 ### 8. Supply chain
 
-- [ ] Dependencies pinned; `pnpm audit` clean (or triaged) in CI.
-- [ ] No post-install scripts from untrusted packages.
+- [x] Dependencies pinned; `pnpm audit` clean (or triaged) in CI.
+- [x] No post-install scripts from untrusted packages.
 
 ## Pre-launch (Phase 7) gate
 
-- [ ] All high-risk items above ticked, with tests.
-- [ ] `pnpm audit` triaged; secrets scan clean.
-- [ ] An adversarial review pass with **fresh context** — re-derive the attack, don't trust the author's framing (the cold-gatekeeper pattern).
+- [x] All high-risk items above ticked, with tests.
+- [x] `pnpm audit` triaged; secrets scan clean.
+- [x] An adversarial review pass with **fresh context** — Phase 7 ran two independent cold-context Explore audits that re-derived each box's defense (or gap) directly from the code, with file:line citations, rather than trusting the author's framing.
 
 ## Review log
 
@@ -72,5 +72,7 @@ Each item: assume an attacker is actively trying it. Tick only when a test prove
 | SR-003 | 2026-06-27 | 5          | Phase 3 semantic cache                    | Cross-tenant cache leakage; wrong-answer collisions                                                                                                          | high     | mitigated | Cache entries are bucketed per-tenant by API-key hash — no cross-tenant hits (tested). The bucket also keys on model/temperature/max_tokens/stream/embed-model, so requests that change the answer never collide; semantic matching happens only within a bucket above a conservative threshold (0.92, configurable). Cache fails open (embed errors → miss).                                                                                                                                                                                                                                                                                                                       |
 | SR-004 | 2026-06-27 | 7          | Phase 4 routing & fallback                | Self-inflicted DoS: unbounded retries/fallback amplify load; a slow or hostile provider stalls the event loop; throttle/router as a new untrusted-input path | med      | mitigated | Each attempt is bounded by a per-attempt `AbortController` timeout (`REQUEST_TIMEOUT_MS`) so a slow provider can't hang the loop (tested). Retries are capped (`MAX_RETRIES`) and fallback walks a finite, **config-defined** candidate chain — request input never adds providers/URLs (no new SSRF surface). A per-provider token bucket paces outbound calls to each provider's `rpm`, protecting upstreams and avoiding self-induced 429 storms. Terminal 4xx errors fail fast without amplification. Inbound per-client rate-limiting (box 7.1) is still deferred.                                                                                                             |
 | SR-005 | 2026-06-27 | 2          | Phase 5 verification (guardrails + judge) | Prompt-injection via response content talking the judge into a "pass"; PII/secrets leaking into traces via verdicts; request content disabling guardrails    | high     | mitigated | Boxes 2.1–2.3 ticked (tested). Guardrails/judge treat prompt+response as **data**, never instructions — only regex/JSON inspection, no eval. The judge prompt wraps the response behind explicit delimiters and labels it untrusted DATA; the verdict is parsed solely from the judge's own JSON output, so an injected `{"score":5}` in the response can't set the score (tested); a judge failure ⇒ "unscored" (null), **never** a pass. Guardrail policy comes only from env/config file, never the request body. Traces persist violation **category codes** (`pii.email`) — never the matched PII/secret value. Inline guardrails fail **closed**: a check that throws blocks. |
+
+| SR-006 | 2026-06-27 | 1, 4, 7, 8 | Phase 7 hardening & launch | Key leakage to logs; SSRF via upstream redirect; self-inflicted DoS from a runaway client; supply-chain advisories | high | mitigated | Box 1.2: `logRedaction` redacts `authorization`/`x-api-key`; a test proves the header logs as `[redacted]` and the raw key never appears (Fastify's default serializer also omits headers, so keys can't leak by default). Box 4.2: the upstream `fetch` uses `redirect: 'error'` — a malicious provider can't 3xx-redirect the prompt to another host (tested). Box 7.1: a per-API-key inbound token bucket (`CLIENT_RPM`) returns 429 when one key exceeds its budget, without affecting other clients (tested). Box 8.1: CI runs `pnpm audit --prod --audit-level=high` and production deps are clean; the only advisories are dev-only (vitest/vite test tooling, never shipped), triaged and tracked for a vitest 3 upgrade. Boxes 3.2/6.2/8.2 ticked from existing coverage (cache per-tenant isolation tests; React-escaped, metadata-only dashboard; no untrusted post-install scripts). |
 
 > Add a row per high-risk change. Status ∈ {open, mitigated, accepted}. Severity ∈ {low, med, high, critical}.

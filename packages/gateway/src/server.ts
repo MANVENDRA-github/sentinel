@@ -4,7 +4,12 @@ import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import type { Span } from '@opentelemetry/api';
 import { chatCompletionRequestSchema } from './schemas.js';
 import { createAuthHook, extractBearerToken, hashApiKey } from './auth.js';
-import { GatewayError, GuardrailBlockedError, ValidationError } from './errors.js';
+import {
+  GatewayError,
+  GuardrailBlockedError,
+  RateLimitedError,
+  ValidationError,
+} from './errors.js';
 import type { ProviderRegistry } from './providers/registry.js';
 import type { TraceStore } from './telemetry/trace.js';
 import type { SemanticCache } from './cache/cache.js';
@@ -43,6 +48,8 @@ export interface ServerDeps {
   cache?: SemanticCache | undefined;
   routing?: RoutingDeps | undefined;
   verifier?: Verifier | undefined;
+  /** Per-API-key inbound rate-limit buckets (built from CLIENT_RPM). */
+  clientThrottle?: BucketRegistry | undefined;
   logger?: FastifyServerOptions['logger'];
 }
 
@@ -54,6 +61,12 @@ const SSE_HEADERS = {
   'content-type': 'text/event-stream',
   'cache-control': 'no-cache',
   connection: 'keep-alive',
+};
+
+/** pino redaction for the default logger — keeps API keys out of request logs. */
+export const logRedaction = {
+  paths: ['req.headers.authorization', 'req.headers["x-api-key"]'],
+  censor: '[redacted]',
 };
 
 const requestSpans = new WeakMap<object, Span>();
@@ -125,15 +138,22 @@ function extractStreamText(chunks: string[]): string {
   return text;
 }
 
+/** preHandler: enforces a per-API-key inbound request-per-minute budget (429 when exceeded). */
+function createClientLimitHook(throttle: BucketRegistry) {
+  return async function clientLimitHook(request: {
+    headers: { authorization?: string | undefined };
+  }): Promise<void> {
+    const token = extractBearerToken(request.headers.authorization);
+    if (token === null) return; // the auth hook already rejects a missing/invalid key
+    const allowed = await throttle.acquire(hashApiKey(token), 0);
+    if (!allowed) throw new RateLimitedError();
+  };
+}
+
 /** Builds the Sentinel gateway Fastify app. Dependencies are injected for testability. */
 export function buildServer(deps: ServerDeps) {
   const app = Fastify({
-    logger: deps.logger ?? {
-      redact: {
-        paths: ['req.headers.authorization', 'req.headers["x-api-key"]'],
-        censor: '[redacted]',
-      },
-    },
+    logger: deps.logger ?? { redact: logRedaction },
   });
 
   app.setErrorHandler((error, request, reply) => {
@@ -147,6 +167,9 @@ export function buildServer(deps: ServerDeps) {
   });
 
   const authHook = createAuthHook(deps.apiKeys);
+  const preHandler = deps.clientThrottle
+    ? [authHook, createClientLimitHook(deps.clientThrottle)]
+    : authHook;
 
   const routerConfig = deps.routing?.config;
   const router = createRouter({
@@ -173,7 +196,7 @@ export function buildServer(deps: ServerDeps) {
         });
         requestSpans.set(request, span);
       },
-      preHandler: authHook,
+      preHandler,
     },
     async (request, reply) => {
       const span = requestSpans.get(request);

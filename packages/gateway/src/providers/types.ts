@@ -3,7 +3,13 @@ import type { ChatCompletionRequest } from '../schemas.js';
 /** A minimal `fetch` shape, narrowed so tests can supply a mock without casts. */
 export type FetchLike = (
   url: string,
-  init: { method: string; headers: Record<string, string>; body: string; signal?: AbortSignal },
+  init: {
+    method: string;
+    headers: Record<string, string>;
+    body: string;
+    signal?: AbortSignal;
+    redirect?: 'follow' | 'error' | 'manual';
+  },
 ) => Promise<Response>;
 
 /** A provider Sentinel can forward chat-completion requests to. */
