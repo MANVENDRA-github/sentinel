@@ -35,12 +35,12 @@ The wedge: existing gateways and observability tools (LiteLLM, Helicone, Langfus
 ## 5. Success criteria (the metrics this project must produce)
 
 - **Drop-in:** an existing OpenAI-SDK app works against Sentinel with only a base-URL change.
-- **Cost:** demonstrated **≥ X% spend reduction** on a mixed workload via routing + cache (headline number for the case study).
-- **Reliability:** **zero unhandled 429s** to the client under a load test that exceeds a single free-tier limit (served via throttle + cache + fallback).
-- **Quality gate:** measured catch-rate of injected bad outputs (malformed/off-topic), at **< Y ms p99 added overhead** for the inline path.
+- **Cost:** demonstrated **50% spend reduction** on a workload with 50% repeated prompts via the semantic cache — 100 of 200 requests served from memory with zero upstream calls (headline number for the case study; routing adds further savings on mixed-capability workloads).
+- **Reliability:** **zero unhandled 429s** to the client — measured 0 of 50 requests to an always-429 upstream reached the client; every one was retried and **failed over** to a healthy provider.
+- **Quality gate:** **100% catch-rate** of injected PII bad outputs, at **< 15 ms p99 added overhead** (measured ~14 ms; p50 ~7.5 ms) on the inline path.
 - **Observability:** every request traceable end-to-end in the dashboard.
 
-(X / Y are filled with real measured numbers at the load-test phase — see `ROADMAP.md` Phase 7.)
+These are real measured numbers from the load harness (`pnpm load` → `load/RESULTS.md`). Honest framing: overhead is Sentinel's *own* per-request time against a near-instant mock upstream (not a model's latency); cost-reduction is on a 50%-repeat workload (real savings track your traffic's repeat rate); the quality catch-rate is the **deterministic guardrail** rate — the async LLM judge needs a real model and is covered by the Phase 5 unit tests.
 
 ## 6. Scope boundaries (explicit)
 

@@ -19,6 +19,7 @@
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
     "test:e2e": "pnpm --filter @sentinel/dashboard test:e2e",
+    "load": "tsx load/run.ts",
     "dev": "tsx watch packages/gateway/src/main.ts",
     "dev:dashboard": "pnpm --filter @sentinel/dashboard dev",
     "build:dashboard": "pnpm --filter @sentinel/dashboard build",

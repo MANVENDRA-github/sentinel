@@ -1,0 +1,15 @@
+{
+  "providers": {
+    "reliable": { "type": "openai-compatible", "baseUrl": "http://localhost:8082" },
+    "flaky": { "type": "openai-compatible", "baseUrl": "http://localhost:8081" }
+  },
+  "models": {
+    "std": "reliable",
+    "pii": "reliable",
+    "svc": "flaky",
+    "warmup": "reliable"
+  },
+  "defaultProvider": "reliable",
+  "routing": { "fallback": ["std"] },
+  "guardrails": { "pii": ["pii.email"] }
+}
