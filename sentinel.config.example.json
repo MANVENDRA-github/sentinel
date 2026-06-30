@@ -19,6 +19,11 @@
       "type": "openai-compatible",
       "baseUrl": "https://api.groq.com/openai/v1",
       "apiKeyEnv": "GROQ_API_KEY"
+    },
+    "anthropic": {
+      "type": "anthropic",
+      "baseUrl": "https://api.anthropic.com/v1",
+      "apiKeyEnv": "ANTHROPIC_API_KEY"
     }
   },
   "models": {
@@ -26,7 +31,8 @@
     "qwen2.5:0.5b": "ollama",
     "gpt-4o-mini": "openai",
     "gemini-2.0-flash": "gemini",
-    "llama-3.3-70b-versatile": "groq"
+    "llama-3.3-70b-versatile": "groq",
+    "claude-3-5-haiku-latest": "anthropic"
   },
   "defaultProvider": "ollama",
   "routing": {
@@ -41,6 +47,7 @@
   "pricing": {
     "gpt-4o-mini": { "inputPer1k": 0.00015, "outputPer1k": 0.0006 },
     "gemini-2.0-flash": { "inputPer1k": 0.0001, "outputPer1k": 0.0004 },
-    "llama-3.3-70b-versatile": { "inputPer1k": 0.00059, "outputPer1k": 0.00079 }
+    "llama-3.3-70b-versatile": { "inputPer1k": 0.00059, "outputPer1k": 0.00079 },
+    "claude-3-5-haiku-latest": { "inputPer1k": 0.0008, "outputPer1k": 0.004 }
   }
 }

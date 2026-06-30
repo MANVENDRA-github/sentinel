@@ -13,7 +13,7 @@ The product source of truth is `PRP_SPEC.md`. The build order is `ROADMAP.md`. B
 - Package manager / monorepo: **pnpm** workspaces.
 - Gateway server: **Fastify** (streaming, hooks, `.inject()` testing).
 - Schemas & validation: **Zod** at every trust boundary (config, request/response, guardrails).
-- Providers: a unified, hand-rolled **OpenAI-compatible** HTTP adapter (`fetch`) — OpenAI, Groq, Gemini's OpenAI endpoint, Ollama, and other OpenAI-API providers. A native **Anthropic** (Messages API) adapter is on the near-term roadmap.
+- Providers: a hand-rolled **OpenAI-compatible** HTTP adapter (`fetch`) — OpenAI, Groq, Gemini's OpenAI endpoint, Ollama, and other OpenAI-API providers — plus a native **Anthropic** (Messages API) adapter. Selected per provider by `type` in `sentinel.config.json`.
 - Local models (keyless): **Ollama** — judge `qwen2.5:7b`, embeddings `nomic-embed-text`.
 - Cache & rate-limit state: **in-memory** (single-node v1). A **Redis** (`ioredis`) backend is a planned swap behind the cache/throttle interfaces.
 - Storage (traces, eval results): **better-sqlite3** / in-memory (single-node v1). A **Postgres** backend is a planned swap behind the `TraceStore` interface.

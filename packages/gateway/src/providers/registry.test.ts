@@ -5,8 +5,24 @@ import type { ResolvedConfig } from '../config.js';
 
 const config: ResolvedConfig = {
   providers: new Map([
-    ['ollama', { name: 'ollama', baseUrl: 'http://localhost:11434/v1', apiKey: undefined }],
-    ['openai', { name: 'openai', baseUrl: 'https://api.openai.com/v1', apiKey: 'k' }],
+    [
+      'ollama',
+      {
+        name: 'ollama',
+        type: 'openai-compatible',
+        baseUrl: 'http://localhost:11434/v1',
+        apiKey: undefined,
+      },
+    ],
+    [
+      'openai',
+      {
+        name: 'openai',
+        type: 'openai-compatible',
+        baseUrl: 'https://api.openai.com/v1',
+        apiKey: 'k',
+      },
+    ],
   ]),
   models: new Map([['qwen2.5:7b', 'ollama']]),
   defaultProvider: 'openai',
@@ -46,5 +62,31 @@ describe('createRegistry', () => {
       .resolve('qwen2.5:7b')
       .chat({ model: 'qwen2.5:7b', messages: [{ role: 'user', content: 'hi' }] });
     expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it('builds the Anthropic adapter for an anthropic-typed provider', async () => {
+    const anthropicConfig: ResolvedConfig = {
+      providers: new Map([
+        ['claude', { name: 'claude', type: 'anthropic', baseUrl: 'http://h/v1', apiKey: 'sk-ant' }],
+      ]),
+      models: new Map([['claude-3-5-sonnet', 'claude']]),
+      defaultProvider: undefined,
+      pricing: new Map(),
+    };
+    const fetchImpl = vi.fn(
+      async (_url: string, _init: { headers: Record<string, string>; body: string }) =>
+        Promise.resolve(
+          new Response(JSON.stringify({ content: [{ type: 'text', text: 'hi' }] }), {
+            status: 200,
+          }),
+        ),
+    );
+    const registry = createRegistry(anthropicConfig, { fetchImpl });
+    await registry
+      .resolve('claude-3-5-sonnet')
+      .chat({ model: 'claude-3-5-sonnet', messages: [{ role: 'user', content: 'hi' }] });
+    const call = fetchImpl.mock.calls[0]!;
+    expect(call[0]).toContain('/messages');
+    expect(call[1].headers['x-api-key']).toBe('sk-ant');
   });
 });
