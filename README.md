@@ -59,7 +59,7 @@ Two git-ignored files:
 - **`.env`** — secrets only: provider API keys, and the `SENTINEL_API_KEYS` clients use to authenticate to Sentinel. See [`.env.example`](./.env.example).
 - **`sentinel.config.json`** — which providers exist and which model routes where. See [`sentinel.config.example.json`](./sentinel.config.example.json).
 
-Each provider sets a `baseUrl` (or `baseUrlEnv` to read it from the environment) and an optional `apiKeyEnv` naming the env var that holds its key. The `models` map routes a model name to a provider; `defaultProvider` handles anything not listed.
+Each provider sets a `baseUrl` (or `baseUrlEnv` to read it from the environment) and an optional `apiKeyEnv` naming the env var that holds its key — or `apiKeyEnvs` (an array) to give a provider a **pool of keys Sentinel round-robins across**, spreading load to survive free-tier limits. The `models` map routes a model name to a provider; `defaultProvider` handles anything not listed.
 
 ```json
 {

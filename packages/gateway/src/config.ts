@@ -113,6 +113,8 @@ const providerConfigSchema = z
     baseUrl: z.string().url().optional(),
     baseUrlEnv: z.string().min(1).optional(),
     apiKeyEnv: z.string().min(1).optional(),
+    /** Multiple key env vars to round-robin across (combined with `apiKeyEnv` if both are set). */
+    apiKeyEnvs: z.array(z.string().min(1)).optional(),
     rpm: z.coerce.number().int().nonnegative().optional(),
   })
   .refine((p) => (p.baseUrl === undefined) !== (p.baseUrlEnv === undefined), {
@@ -168,7 +170,8 @@ export interface ResolvedProvider {
   /** Which adapter serves this provider: a generic OpenAI-compatible HTTP API or Anthropic's Messages API. */
   type: 'openai-compatible' | 'anthropic';
   baseUrl: string;
-  apiKey: string | undefined;
+  /** Resolved API keys for this provider (0 = keyless, >1 = round-robin pool). */
+  apiKeys: string[];
   /** Per-provider requests-per-minute limit for the throttle (omitted = unlimited). */
   rpm?: number;
 }
@@ -230,12 +233,12 @@ export function loadConfig(options: LoadConfigOptions): ResolvedConfig {
   const providers = new Map<string, ResolvedProvider>();
   for (const [name, p] of Object.entries(parsed.data.providers)) {
     const baseUrl = p.baseUrl ?? readEnvOrThrow(options.env, p.baseUrlEnv, name);
-    const apiKey = p.apiKeyEnv === undefined ? undefined : options.env[p.apiKeyEnv];
+    const apiKeys = resolveApiKeys(options.env, p.apiKeyEnv, p.apiKeyEnvs);
     providers.set(name, {
       name,
       type: p.type,
       baseUrl,
-      apiKey,
+      apiKeys,
       ...(p.rpm !== undefined ? { rpm: p.rpm } : {}),
     });
   }
@@ -248,6 +251,21 @@ export function loadConfig(options: LoadConfigOptions): ResolvedConfig {
     ...(parsed.data.guardrails ? { guardrails: parsed.data.guardrails } : {}),
     pricing: new Map(Object.entries(parsed.data.pricing ?? {})),
   };
+}
+
+/** Resolves a provider's key pool from `apiKeyEnv` (single) + `apiKeyEnvs` (many); skips unset/empty. */
+function resolveApiKeys(
+  env: NodeJS.ProcessEnv,
+  single: string | undefined,
+  multiple: string[] | undefined,
+): string[] {
+  const names = [...(single !== undefined ? [single] : []), ...(multiple ?? [])];
+  const keys: string[] = [];
+  for (const varName of names) {
+    const value = env[varName];
+    if (value !== undefined && value.length > 0) keys.push(value);
+  }
+  return keys;
 }
 
 function readEnvOrThrow(env: NodeJS.ProcessEnv, key: string | undefined, provider: string): string {

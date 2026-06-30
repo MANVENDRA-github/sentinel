@@ -13,7 +13,7 @@
     "gemini": {
       "type": "openai-compatible",
       "baseUrl": "https://generativelanguage.googleapis.com/v1beta/openai",
-      "apiKeyEnv": "GEMINI_API_KEY"
+      "apiKeyEnvs": ["GEMINI_API_KEY", "GEMINI_API_KEY_2"]
     },
     "groq": {
       "type": "openai-compatible",

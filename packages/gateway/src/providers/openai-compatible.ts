@@ -1,11 +1,12 @@
 import type { ChatCompletionRequest } from '../schemas.js';
-import type { FetchLike, Provider } from './types.js';
+import type { ApiKeySource, FetchLike, Provider } from './types.js';
 import { UpstreamError } from '../errors.js';
 
 export interface OpenAICompatibleOptions {
   name: string;
   baseUrl: string;
-  apiKey?: string | undefined;
+  /** A fixed key, or a supplier that returns the next key (round-robin across a pool). */
+  apiKey?: ApiKeySource | undefined;
   /** Injectable fetch (defaults to global `fetch`); handy for tests. */
   fetchImpl?: FetchLike;
 }
@@ -20,8 +21,9 @@ export function createOpenAICompatibleProvider(options: OpenAICompatibleOptions)
 
   function buildHeaders(): Record<string, string> {
     const headers: Record<string, string> = { 'content-type': 'application/json' };
-    if (options.apiKey !== undefined && options.apiKey.length > 0) {
-      headers.authorization = `Bearer ${options.apiKey}`;
+    const key = typeof options.apiKey === 'function' ? options.apiKey() : options.apiKey;
+    if (key !== undefined && key.length > 0) {
+      headers.authorization = `Bearer ${key}`;
     }
     return headers;
   }
