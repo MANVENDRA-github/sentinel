@@ -4,6 +4,16 @@ All notable changes to Sentinel are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- The gateway production build (`pnpm build`) no longer pulls dashboard sources into the Node build; CI now runs `pnpm build` on every PR so it can't silently break again.
+
+### Changed
+
+- Documentation-accuracy pass: corrected stack/roadmap references (Node load harness, not k6; single-node in-memory cache + SQLite storage; dashboard is shipped; providers are OpenAI-compatible with native Anthropic planned), reconciled `package.json` versions to `0.1.0`, and added a **Known limitations** section to the README.
+
 ## [0.1.0] — 2026-06-28
 
 First public release: a self-hostable, OpenAI-compatible **verifying LLM gateway** that
@@ -44,6 +54,6 @@ dashboard. Adopting it is a one-line base-URL change.
 - Per-client rate limiting (`CLIENT_RPM`) keyed by hashed API key — a single noisy key gets 429s without affecting other clients.
 - Upstream fetches refuse redirects (SSRF hardening); authorization headers redacted from logs.
 - CI runs typecheck + lint + the full coverage gate plus a production dependency audit. Security posture tracked in `SECURITY_REVIEW_LOG.md`.
-- Reproducible load harness (`pnpm load`) producing the headline benchmarks in `load/RESULTS.md`: 50% cache cost-reduction on a 50%-repeat workload, zero unhandled 429s, 100% PII guardrail catch-rate, and ~14 ms p99 added overhead.
+- Reproducible load harness (`pnpm load`) producing the headline benchmarks in `load/RESULTS.md`: 50% cache cost-reduction on a 50%-repeat workload, zero unhandled 429s, 100% PII guardrail catch-rate, and ~14 ms p99 added overhead (measured in-process against **mock upstreams**; the catch-rate is the deterministic-guardrail rate — see `load/RESULTS.md` for full method and caveats).
 
 [0.1.0]: https://github.com/MANVENDRA-github/sentinel/releases/tag/v0.1.0

@@ -1,6 +1,6 @@
 {
   "name": "sentinel",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "A self-hostable verifying LLM gateway — routes, semantically caches, and verifies every LLM call.",

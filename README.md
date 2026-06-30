@@ -6,7 +6,7 @@
 
 A self-hostable **verifying LLM gateway** — a drop-in, OpenAI-compatible proxy that **routes** (cheapest capable model + fallback), **semantically caches**, and **verifies** (deterministic guardrails inline + a local Ollama judge) every LLM call, with full OpenTelemetry tracing. Unlike after-the-fact observability tools, it can flag or block a bad response _before it returns_.
 
-> **v0.1.0 — feature-complete and hardened.** All seven build phases are done: drop-in proxy, OpenTelemetry tracing, semantic cache, routing / fallback / rate-limit survival, in-path verification (guardrails + a local judge), a React dashboard, and security hardening with a reproducible load harness. Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md).
+> **v0.1.0 — first release.** All build phases (0–7) are done: drop-in proxy, OpenTelemetry tracing, semantic cache, routing / fallback / rate-limit survival, in-path verification (guardrails + a local judge), a React dashboard, and security hardening with a reproducible load harness. It runs **single-node** (in-memory cache + SQLite) — see [Known limitations](#known-limitations). Product spec in [`PRP_SPEC.md`](./PRP_SPEC.md), phased build in [`ROADMAP.md`](./ROADMAP.md), contributor/agent guidance in [`CLAUDE.md`](./CLAUDE.md).
 
 ## What it does
 
@@ -89,7 +89,7 @@ A provider may also set an `rpm` (requests-per-minute) ceiling; the optional `ro
 
 ### Bring your own Ollama
 
-Sentinel never hardcodes a machine or a model. Set `OLLAMA_BASE_URL` in `.env` to point at _your_ Ollama (default `http://localhost:11434/v1`), list the models you've pulled in the `models` map, and you're set. The local **judge** that verifies outputs in a later phase works the same way — it reads `JUDGE_MODEL` from your environment, so every clone uses its own local model, with no API key and no quota.
+Sentinel never hardcodes a machine or a model. Set `OLLAMA_BASE_URL` in `.env` to point at _your_ Ollama (default `http://localhost:11434/v1`), list the models you've pulled in the `models` map, and you're set. The local **judge** that verifies outputs works the same way — it reads `JUDGE_MODEL` from your environment, so every clone uses its own local model, with no API key and no quota.
 
 ## Observability
 
@@ -154,6 +154,17 @@ Real numbers from the bundled load harness (`pnpm load` spins up a mock upstream
 | **Added overhead** (Sentinel's own time) | **~14 ms p99** (p50 ~7.5 ms) against a near-instant mock upstream |
 
 Framing, stated plainly: overhead is Sentinel's _own_ per-request cost, not a model's latency; cost-reduction scales with your traffic's repeat rate; and the catch-rate is the deterministic guardrail rate — the async LLM judge needs a real model and is covered by the unit tests. Reproduce it all with `pnpm load`.
+
+## Known limitations
+
+Sentinel v0.1.0 is a **single-node, self-hosted** gateway. Honest boundaries today:
+
+- **In-memory cache & rate-limit state.** The semantic cache and token buckets live in-process — not shared across instances, and cleared on restart. A Redis-backed swap is planned behind the existing interfaces.
+- **SQLite (or in-memory) trace storage.** Ideal for single-node; a Postgres backend for multi-instance is planned.
+- **The async judge needs a local Ollama** with `JUDGE_MODEL` pulled. Without it, judging degrades to `unscored` (never a false pass). The bundled benchmarks run against **mock upstreams**, so the headline catch-rate is the _deterministic guardrail_ rate; the LLM judge is covered by unit tests.
+- **Inline guardrails apply to non-streaming responses.** Streamed responses are judged from their buffered output _after_ completion (inline blocking of a live stream is on the roadmap).
+- **Providers are OpenAI-compatible.** OpenAI, Groq, Gemini's OpenAI endpoint, Ollama, and other OpenAI-API providers work today; a native **Anthropic** (Messages API) adapter is planned.
+- **Cost reduction is measured by request volume** (cache hits × avoided upstream calls) on a repeat-heavy workload; per-request dollar accounting is planned.
 
 ## Development
 
