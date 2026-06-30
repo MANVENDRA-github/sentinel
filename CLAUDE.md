@@ -13,15 +13,15 @@ The product source of truth is `PRP_SPEC.md`. The build order is `ROADMAP.md`. B
 - Package manager / monorepo: **pnpm** workspaces.
 - Gateway server: **Fastify** (streaming, hooks, `.inject()` testing).
 - Schemas & validation: **Zod** at every trust boundary (config, request/response, guardrails).
-- Providers: OpenAI-compatible interface (`openai` SDK) with adapters for **OpenAI, Anthropic, Google Gemini (AI Studio), Ollama**.
+- Providers: a unified, hand-rolled **OpenAI-compatible** HTTP adapter (`fetch`) — OpenAI, Groq, Gemini's OpenAI endpoint, Ollama, and other OpenAI-API providers. A native **Anthropic** (Messages API) adapter is on the near-term roadmap.
 - Local models (keyless): **Ollama** — judge `qwen2.5:7b`, embeddings `nomic-embed-text`.
-- Cache & rate-limit state: **Redis** (`ioredis`); in-memory fallback for dev/tests.
-- Storage (traces, eval results): **better-sqlite3** (dev) / **Postgres** (prod).
+- Cache & rate-limit state: **in-memory** (single-node v1). A **Redis** (`ioredis`) backend is a planned swap behind the cache/throttle interfaces.
+- Storage (traces, eval results): **better-sqlite3** / in-memory (single-node v1). A **Postgres** backend is a planned swap behind the `TraceStore` interface.
 - Telemetry: **OpenTelemetry** (`@opentelemetry/sdk-node`). Logging: **pino**.
 - Tests: **Vitest** (unit/integration), **Playwright** (E2E + Playwright MCP for the dashboard).
 - Quality: **ESLint** (flat config, `typescript-eslint` strict) + **Prettier**.
-- Infra: **Docker** + docker-compose (gateway + redis + ollama). CI: **GitHub Actions**.
-- Dashboard (later phase): **React + Vite + TS**.
+- Infra: **Docker** + docker-compose for local dependencies (redis + ollama). CI: **GitHub Actions**.
+- Dashboard: **React + Vite + TS**.
 
 **Commands** (the only canonical ones — use these, don't invent):
 - Install: `pnpm install`
@@ -37,8 +37,8 @@ The product source of truth is `PRP_SPEC.md`. The build order is `ROADMAP.md`. B
 **Structure** (target monorepo — build it per `ROADMAP.md`, don't scaffold ahead of the current phase):
 - `packages/gateway/` — the Fastify proxy: providers, router, cache, verify (guardrails + judge), telemetry. The core.
 - `packages/sdk/` — thin client/config helpers (later phase).
-- `packages/dashboard/` — React + Vite UI (later phase).
-- Tests: `*.test.ts` next to source (unit); `packages/*/test/` (integration); `e2e/` (Playwright).
+- `packages/dashboard/` — React + Vite UI (shipped).
+- Tests: `*.test.ts` next to source (unit + integration via Fastify `.inject()`); `packages/dashboard/e2e/` (Playwright).
 - Root docs: `PRP_SPEC.md`, `ROADMAP.md`, `PLAN_TEMPLATE.md`, `TEST_CONTRACT.md`, `SECURITY_REVIEW_LOG.md`.
 
 ## Coding style (strict — these are not suggestions)

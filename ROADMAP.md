@@ -52,9 +52,9 @@ A modular, sequential build. **Work one phase at a time.** Each phase is sized t
 
 ## Phase 7 — Hardening, load test & launch
 **Goal:** prove the numbers; ship it.
-**Context:** `e2e/`, `load/` (k6), `README.md`, docs.
-**Deliverables:** k6 load test; measured cost-reduction %, p99 overhead, 429-elimination, quality catch-rate (fills `PRP_SPEC.md` §5); full security pass (`SECURITY_REVIEW_LOG.md`); README + quickstart; OSS release.
-**Exit:** headline metrics captured and documented; security checklist complete; v1.0 tagged.
+**Context:** `packages/dashboard/e2e/`, `load/` (Node harness, `load/run.ts`), `README.md`, docs.
+**Deliverables:** Node load harness (`load/run.ts`); measured cost-reduction %, p99 overhead, 429-elimination, quality catch-rate (fills `PRP_SPEC.md` §5); full security pass (`SECURITY_REVIEW_LOG.md`); README + quickstart; OSS release.
+**Exit:** headline metrics captured and documented; security checklist complete; v0.1.0 tagged.
 
 ## Phase 8 — (Advanced, optional) Fine-tuned judge
 **Goal:** a sharper, cheaper judge — and the model-internals milestone.

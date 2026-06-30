@@ -21,7 +21,7 @@ A PR whose diff adds or changes behavior without a corresponding test that would
 | Integration | **Vitest** + Fastify **`.inject()`** | The HTTP surface with providers / Redis / Ollama **mocked or faked**. Request → route → cache → verify → response. |
 | Contract | **Vitest** + recorded fixtures | Provider adapters against **recorded** real responses (record once, replay in CI). Catches provider-shape drift. |
 | E2E | **Playwright** (+ **Playwright MCP**) | Dashboard flows against a seeded gateway. Agent-driven exploratory passes via Playwright MCP. |
-| Load | **k6** (Phase 7) | Throughput, p99 overhead, 429-elimination, cost-reduction numbers. |
+| Load | **Node harness** (`load/run.ts`) | Throughput, p99 overhead, 429-elimination, cost-reduction numbers. |
 
 ## Determinism rules (CI must be hermetic)
 
@@ -49,6 +49,6 @@ A PR whose diff adds or changes behavior without a corresponding test that would
 
 ## Conventions
 
-- Test files: `*.test.ts` next to source (unit); `packages/*/test/**` (integration); `e2e/**` (Playwright).
+- Test files: `*.test.ts` next to source (unit + integration); `packages/dashboard/e2e/**` (Playwright).
 - One behavior per test; name as `describe('feature') > it('does X when Y')`.
 - Arrange–Act–Assert; no logic in tests; shared fixtures in `test/fixtures/`.
