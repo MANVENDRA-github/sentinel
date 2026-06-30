@@ -14,6 +14,7 @@ const SCHEMA = `
     prompt_tokens INTEGER,
     completion_tokens INTEGER,
     total_tokens INTEGER,
+    cost_usd REAL,
     error_type TEXT,
     error_message TEXT,
     api_key_hash TEXT,
@@ -50,6 +51,7 @@ interface TraceRow {
   prompt_tokens: number | null;
   completion_tokens: number | null;
   total_tokens: number | null;
+  cost_usd: number | null;
   error_type: string | null;
   error_message: string | null;
   api_key_hash: string | null;
@@ -74,6 +76,15 @@ export class SqliteTraceStore implements TraceStore {
     this.db = new Database(path);
     this.db.pragma('journal_mode = WAL');
     this.db.exec(SCHEMA);
+    this.migrate();
+  }
+
+  /** Adds columns introduced after the initial schema to a pre-existing DB. */
+  private migrate(): void {
+    const columns = new Set(
+      (this.db.prepare('PRAGMA table_info(traces)').all() as { name: string }[]).map((c) => c.name),
+    );
+    if (!columns.has('cost_usd')) this.db.exec('ALTER TABLE traces ADD COLUMN cost_usd REAL');
   }
 
   record(trace: TraceRecord): void {
@@ -81,13 +92,13 @@ export class SqliteTraceStore implements TraceStore {
       .prepare(
         `INSERT OR REPLACE INTO traces
            (id, trace_id, timestamp, duration_ms, model, provider, stream, status,
-            prompt_tokens, completion_tokens, total_tokens, error_type, error_message, api_key_hash,
+            prompt_tokens, completion_tokens, total_tokens, cost_usd, error_type, error_message, api_key_hash,
             cache_hit, routed_provider, routed_model, fallback_used, retry_count,
             guardrail_status, guardrail_violations, judge_score, judge_reason, judge_error,
             prompt_fingerprint)
          VALUES
            (@id, @traceId, @timestamp, @durationMs, @model, @provider, @stream, @status,
-            @promptTokens, @completionTokens, @totalTokens, @errorType, @errorMessage, @apiKeyHash,
+            @promptTokens, @completionTokens, @totalTokens, @costUsd, @errorType, @errorMessage, @apiKeyHash,
             @cacheHit, @routedProvider, @routedModel, @fallbackUsed, @retryCount,
             @guardrailStatus, @guardrailViolations, @judgeScore, @judgeReason, @judgeError,
             @promptFingerprint)`,
@@ -104,6 +115,7 @@ export class SqliteTraceStore implements TraceStore {
         promptTokens: trace.promptTokens,
         completionTokens: trace.completionTokens,
         totalTokens: trace.totalTokens,
+        costUsd: trace.costUsd,
         errorType: trace.errorType,
         errorMessage: trace.errorMessage,
         apiKeyHash: trace.apiKeyHash,
@@ -224,6 +236,7 @@ function rowToRecord(row: TraceRow): TraceRecord {
     promptTokens: row.prompt_tokens,
     completionTokens: row.completion_tokens,
     totalTokens: row.total_tokens,
+    costUsd: row.cost_usd,
     errorType: row.error_type,
     errorMessage: row.error_message,
     apiKeyHash: row.api_key_hash,

@@ -19,6 +19,10 @@ function pct(value: number): string {
   return `${String(Math.round(value * 1000) / 10)}%`;
 }
 
+function usd(value: number): string {
+  return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}`;
+}
+
 export function App() {
   const [baseUrl, setBaseUrl] = useState(() => localStorage.getItem(KEY_BASE) ?? '');
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem(KEY_ADMIN) ?? '');
@@ -125,6 +129,12 @@ export function App() {
         />
         <StatCard testId="stat-tokens" label="Tokens" value={stats.totalTokens.toLocaleString()} />
         <StatCard
+          testId="stat-cost"
+          label="Cost"
+          value={usd(stats.totalCostUsd)}
+          sub={`${usd(stats.savedCostUsd)} saved by cache`}
+        />
+        <StatCard
           testId="stat-judge"
           label="Avg judge score"
           value={stats.avgJudgeScore !== null ? String(stats.avgJudgeScore) : '—'}
@@ -134,6 +144,7 @@ export function App() {
 
       <section className="grid">
         <Sparkline title="Requests over time" buckets={stats.overTime} />
+        <Sparkline title="Cost over time (USD)" buckets={stats.overTime} value={(b) => b.costUsd} />
         <BarChart title="By provider" data={stats.byProvider} />
         <BarChart title="By model" data={stats.byModel} />
         <BarChart title="By status" data={stats.byStatusClass} />

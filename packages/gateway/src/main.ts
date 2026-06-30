@@ -63,6 +63,7 @@ async function main(): Promise<void> {
     traceStore: store,
     adminKey: env.adminKey,
     cache,
+    pricing: config.pricing,
     ...(clientThrottle ? { clientThrottle } : {}),
     routing: {
       config: config.routing,

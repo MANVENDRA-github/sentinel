@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { z } from 'zod';
 import { ConfigError } from './errors.js';
+import type { ModelPricing } from './cost.js';
 
 // ─────────────────────────── Server environment ───────────────────────────
 
@@ -129,6 +130,12 @@ const guardrailsConfigSchema = z.object({
   requireJson: z.boolean().optional(),
 });
 
+// USD per 1,000 tokens, per model. Used to attribute a cost to every traced request.
+const modelPricingSchema = z.object({
+  inputPer1k: z.number().nonnegative(),
+  outputPer1k: z.number().nonnegative(),
+});
+
 const sentinelConfigSchema = z
   .object({
     providers: z.record(z.string(), providerConfigSchema),
@@ -136,6 +143,7 @@ const sentinelConfigSchema = z
     defaultProvider: z.string().optional(),
     routing: routingConfigSchema.optional(),
     guardrails: guardrailsConfigSchema.optional(),
+    pricing: z.record(z.string(), modelPricingSchema).optional(),
   })
   .superRefine((cfg, ctx) => {
     const names = new Set(Object.keys(cfg.providers));
@@ -183,6 +191,8 @@ export interface ResolvedConfig {
   defaultProvider: string | undefined;
   routing?: ResolvedRouting;
   guardrails?: ResolvedGuardrails;
+  /** model name → USD-per-1K-token pricing (empty when no `pricing` block is configured). */
+  pricing: Map<string, ModelPricing>;
 }
 
 export interface LoadConfigOptions {
@@ -228,6 +238,7 @@ export function loadConfig(options: LoadConfigOptions): ResolvedConfig {
     defaultProvider: parsed.data.defaultProvider,
     ...(parsed.data.routing ? { routing: parsed.data.routing } : {}),
     ...(parsed.data.guardrails ? { guardrails: parsed.data.guardrails } : {}),
+    pricing: new Map(Object.entries(parsed.data.pricing ?? {})),
   };
 }
 

@@ -93,7 +93,7 @@ Sentinel never hardcodes a machine or a model. Set `OLLAMA_BASE_URL` in `.env` t
 
 ## Observability
 
-Every request is traced with OpenTelemetry — provider, model, status, latency, and token usage — and persisted to a queryable store (SQLite by default; set `TRACE_DB=memory` for an ephemeral one). Spans also export to any OTLP collector (Jaeger, etc.) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+Every request is traced with OpenTelemetry — provider, model, status, latency, token usage, and (when a `pricing` map is configured) estimated USD cost — and persisted to a queryable store (SQLite by default; set `TRACE_DB=memory` for an ephemeral one). Spans also export to any OTLP collector (Jaeger, etc.) when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
 Read recent traces through the admin-gated API (set `SENTINEL_ADMIN_KEY` to enable it):
 
@@ -164,7 +164,7 @@ Sentinel v0.1.0 is a **single-node, self-hosted** gateway. Honest boundaries tod
 - **The async judge needs a local Ollama** with `JUDGE_MODEL` pulled. Without it, judging degrades to `unscored` (never a false pass). The bundled benchmarks run against **mock upstreams**, so the headline catch-rate is the _deterministic guardrail_ rate; the LLM judge is covered by unit tests.
 - **Inline guardrails apply to non-streaming responses.** Streamed responses are judged from their buffered output _after_ completion (inline blocking of a live stream is on the roadmap).
 - **Providers are OpenAI-compatible.** OpenAI, Groq, Gemini's OpenAI endpoint, Ollama, and other OpenAI-API providers work today; a native **Anthropic** (Messages API) adapter is planned.
-- **Cost reduction is measured by request volume** (cache hits × avoided upstream calls) on a repeat-heavy workload; per-request dollar accounting is planned.
+- **Per-request dollar cost requires a `pricing` map** in `sentinel.config.json` (USD per 1K tokens, per model). With it, every trace records a `costUsd` and the dashboard shows spend + cache savings; without it, cost is unknown (`null`) and only request-volume cache savings are visible.
 
 ## Development
 

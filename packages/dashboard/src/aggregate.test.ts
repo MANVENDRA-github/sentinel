@@ -15,6 +15,7 @@ function trace(over: Partial<TraceRecord>): TraceRecord {
     promptTokens: 10,
     completionTokens: 5,
     totalTokens: 15,
+    costUsd: null,
     errorType: null,
     errorMessage: null,
     apiKeyHash: null,
@@ -90,5 +91,28 @@ describe('computeStats', () => {
     expect(stats.overTime).toHaveLength(2);
     expect(stats.overTime[0]?.count).toBe(2);
     expect(stats.overTime[1]?.count).toBe(1);
+  });
+
+  it('sums cost spent vs saved by cache (null cost ignored)', () => {
+    const stats = computeStats([
+      trace({ costUsd: 0.01, cacheHit: false }),
+      trace({ costUsd: 0.02, cacheHit: false }),
+      trace({ costUsd: 0.05, cacheHit: true }),
+      trace({ costUsd: null, cacheHit: false }),
+    ]);
+    expect(stats.totalCostUsd).toBe(0.03);
+    expect(stats.savedCostUsd).toBe(0.05);
+  });
+
+  it('buckets cost over time, excluding cache hits', () => {
+    const stats = computeStats(
+      [
+        trace({ timestamp: 0, costUsd: 0.01, cacheHit: false }),
+        trace({ timestamp: 30_000, costUsd: 0.02, cacheHit: false }),
+        trace({ timestamp: 30_000, costUsd: 0.04, cacheHit: true }),
+      ],
+      60_000,
+    );
+    expect(stats.overTime[0]?.costUsd).toBeCloseTo(0.03, 6);
   });
 });

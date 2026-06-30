@@ -10,6 +10,7 @@ const config: ResolvedConfig = {
   ]),
   models: new Map([['qwen2.5:7b', 'ollama']]),
   defaultProvider: 'openai',
+  pricing: new Map(),
 };
 
 describe('createRegistry', () => {
@@ -33,6 +34,7 @@ describe('createRegistry', () => {
       providers: new Map(),
       models: new Map([['m', 'ghost']]),
       defaultProvider: undefined,
+      pricing: new Map(),
     };
     expect(() => createRegistry(broken).resolve('m')).toThrow(ModelNotFoundError);
   });

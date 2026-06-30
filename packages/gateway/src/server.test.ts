@@ -14,6 +14,7 @@ import type { SemanticCache } from './cache/cache.js';
 import type { Embedder } from './cache/embedder.js';
 import { createVerifier } from './verify/verifier.js';
 import type { Judge } from './verify/judge.js';
+import type { ModelPricing } from './cost.js';
 
 function makeProvider(overrides: Partial<Provider> = {}): Provider {
   return {
@@ -48,7 +49,12 @@ function makeMultiRegistry(map: Record<string, Provider>): ProviderRegistry {
 
 function buildTestServer(
   registry: ProviderRegistry,
-  opts: { store?: TraceStore; adminKey?: string; cache?: SemanticCache } = {},
+  opts: {
+    store?: TraceStore;
+    adminKey?: string;
+    cache?: SemanticCache;
+    pricing?: ReadonlyMap<string, ModelPricing>;
+  } = {},
 ) {
   return buildServer({
     registry,
@@ -57,6 +63,7 @@ function buildTestServer(
     traceStore: opts.store ?? new InMemoryTraceStore(),
     adminKey: opts.adminKey,
     cache: opts.cache,
+    ...(opts.pricing ? { pricing: opts.pricing } : {}),
   });
 }
 
@@ -437,6 +444,25 @@ describe('tracing & /traces', () => {
     expect(last?.completionTokens).toBe(7);
   });
 
+  it('attributes a USD cost to the trace when the model is priced', async () => {
+    const chatProvider = makeProvider({
+      chat: () =>
+        Promise.resolve({
+          id: 'cmpl',
+          choices: [],
+          usage: { prompt_tokens: 5, completion_tokens: 7, total_tokens: 12 },
+        }),
+    });
+    const app = buildTestServer(makeRegistry(chatProvider), {
+      store: sink,
+      pricing: new Map<string, ModelPricing>([['m', { inputPer1k: 1, outputPer1k: 2 }]]),
+    });
+    await app.inject({ method: 'POST', url, headers: auth, payload: body });
+    await app.close();
+    // 5/1K × $1 + 7/1K × $2 = 0.005 + 0.014 = 0.019
+    expect(sink.query()[0]?.costUsd).toBe(0.019);
+  });
+
   it('requires the admin key on /traces', async () => {
     const app = buildTestServer(makeRegistry(makeProvider()), {
       store: sink,
@@ -474,6 +500,7 @@ describe('tracing & /traces', () => {
       promptTokens: null,
       completionTokens: null,
       totalTokens: null,
+      costUsd: null,
       errorType: null,
       errorMessage: null,
       apiKeyHash: null,
@@ -518,6 +545,7 @@ describe('tracing & /traces', () => {
       promptTokens: null,
       completionTokens: null,
       totalTokens: null,
+      costUsd: null,
       errorType: null,
       errorMessage: null,
       apiKeyHash: null,
@@ -713,6 +741,7 @@ describe('tracing & /traces', () => {
       promptTokens: null,
       completionTokens: null,
       totalTokens: null,
+      costUsd: null,
       errorType: null,
       errorMessage: null,
       apiKeyHash: null,

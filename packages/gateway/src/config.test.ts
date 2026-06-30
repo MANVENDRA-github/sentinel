@@ -95,6 +95,26 @@ describe('loadConfig', () => {
     expect(cfg.defaultProvider).toBe('ollama');
   });
 
+  it('parses the pricing map and defaults it to empty', () => {
+    const withPricing = JSON.stringify({
+      providers: { ollama: { type: 'openai-compatible', baseUrlEnv: 'OLLAMA_BASE_URL' } },
+      models: { 'llama3.2': 'ollama' },
+      pricing: { 'gpt-4o-mini': { inputPer1k: 0.15, outputPer1k: 0.6 } },
+    });
+    const cfg = loadConfig({ path: 'x', env, readFile: () => withPricing });
+    expect(cfg.pricing.get('gpt-4o-mini')).toEqual({ inputPer1k: 0.15, outputPer1k: 0.6 });
+    expect(loadConfig({ path: 'x', env, readFile: () => validConfig }).pricing.size).toBe(0);
+  });
+
+  it('rejects negative pricing', () => {
+    const bad = JSON.stringify({
+      providers: { ollama: { type: 'openai-compatible', baseUrlEnv: 'OLLAMA_BASE_URL' } },
+      models: {},
+      pricing: { m: { inputPer1k: -1, outputPer1k: 0 } },
+    });
+    expect(() => loadConfig({ path: 'x', env, readFile: () => bad })).toThrow(ConfigError);
+  });
+
   it('throws on invalid JSON', () => {
     expect(() => loadConfig({ path: 'x', env, readFile: () => '{ not json' })).toThrow(ConfigError);
   });

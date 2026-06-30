@@ -15,6 +15,7 @@ function record(over: Partial<TraceRecord>): TraceRecord {
     promptTokens: null,
     completionTokens: null,
     totalTokens: null,
+    costUsd: null,
     errorType: null,
     errorMessage: null,
     apiKeyHash: null,

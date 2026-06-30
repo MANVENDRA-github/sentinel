@@ -3,6 +3,8 @@ import type { FastifyServerOptions } from 'fastify';
 import { SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import type { Span } from '@opentelemetry/api';
 import { chatCompletionRequestSchema } from './schemas.js';
+import { computeCostUsd } from './cost.js';
+import type { ModelPricing, TokenUsage } from './cost.js';
 import { createAuthHook, extractBearerToken, hashApiKey } from './auth.js';
 import {
   GatewayError,
@@ -48,6 +50,8 @@ export interface ServerDeps {
   cache?: SemanticCache | undefined;
   routing?: RoutingDeps | undefined;
   verifier?: Verifier | undefined;
+  /** model → USD-per-1K-token pricing, for per-request cost attribution on the trace. */
+  pricing?: ReadonlyMap<string, ModelPricing> | undefined;
   /** Per-API-key inbound rate-limit buckets (built from CLIENT_RPM). */
   clientThrottle?: BucketRegistry | undefined;
   logger?: FastifyServerOptions['logger'];
@@ -101,6 +105,32 @@ function setUsageAttributes(span: Span | undefined, result: unknown): void {
   }
   if (typeof u.total_tokens === 'number')
     span.setAttribute('gen_ai.usage.total_tokens', u.total_tokens);
+}
+
+/** Extracts OpenAI-style token usage as plain numbers (null when a field is absent). */
+function extractUsage(result: unknown): TokenUsage {
+  if (typeof result !== 'object' || result === null)
+    return { promptTokens: null, completionTokens: null };
+  const usage = (result as { usage?: unknown }).usage;
+  if (typeof usage !== 'object' || usage === null)
+    return { promptTokens: null, completionTokens: null };
+  const u = usage as Record<string, unknown>;
+  return {
+    promptTokens: typeof u.prompt_tokens === 'number' ? u.prompt_tokens : null,
+    completionTokens: typeof u.completion_tokens === 'number' ? u.completion_tokens : null,
+  };
+}
+
+/** Records the request's USD cost from usage × the price map (no-op if unpriced/unknown). */
+function applyCost(
+  span: Span | undefined,
+  model: string,
+  result: unknown,
+  pricing: ReadonlyMap<string, ModelPricing> | undefined,
+): void {
+  if (span === undefined || pricing === undefined || pricing.size === 0) return;
+  const cost = computeCostUsd(model, extractUsage(result), pricing);
+  if (cost !== null) span.setAttribute('sentinel.cost_usd', cost);
 }
 
 /** Records which provider/model actually served the request after routing/fallback. */
@@ -226,6 +256,8 @@ export function buildServer(deps: ServerDeps) {
           const cached = await deps.cache.get(chatRequest, apiKeyHash);
           if (cached?.kind === 'json') {
             setUsageAttributes(span, cached.body);
+            // Cost recorded on a hit = the upstream spend this cache avoided.
+            applyCost(span, chatRequest.model, cached.body, deps.pricing);
             span?.setAttribute('sentinel.cache_hit', true);
             endSpan(request, 200);
             return reply.status(200).send(cached.body);
@@ -234,6 +266,7 @@ export function buildServer(deps: ServerDeps) {
         const { result, outcome } = await runChat(candidates, chatRequest, execOptions);
         setUsageAttributes(span, result);
         applyRouteAttributes(span, outcome);
+        applyCost(span, outcome.routedModel, result, deps.pricing);
 
         let responseText: string | undefined;
         if (deps.verifier !== undefined) {
