@@ -58,15 +58,20 @@ export function Histogram(props: { title: string; bins: ScoreBin[] }) {
   );
 }
 
-export function Sparkline(props: { title: string; buckets: TimeBucket[] }) {
+export function Sparkline(props: {
+  title: string;
+  buckets: TimeBucket[];
+  value?: (b: TimeBucket) => number;
+}) {
   const pts = props.buckets;
+  const value = props.value ?? ((b: TimeBucket) => b.count);
   const width = 280;
   const height = 60;
-  const max = Math.max(1, ...pts.map((p) => p.count));
+  const max = Math.max(1, ...pts.map((p) => value(p)));
   const path = pts
     .map((p, i) => {
       const x = pts.length > 1 ? (i / (pts.length - 1)) * width : 0;
-      const y = height - (p.count / max) * height;
+      const y = height - (value(p) / max) * height;
       return `${i === 0 ? 'M' : 'L'}${String(Math.round(x))},${String(Math.round(y))}`;
     })
     .join(' ');

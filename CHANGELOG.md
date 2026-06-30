@@ -6,6 +6,10 @@ All notable changes to Sentinel are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Per-request **cost tracking**: set a `pricing` map (USD per 1K tokens, per model) in `sentinel.config.json` and every trace records a `costUsd`; the dashboard shows total spend, spend saved by the cache, and cost over time.
+
 ### Fixed
 
 - The gateway production build (`pnpm build`) no longer pulls dashboard sources into the Node build; CI now runs `pnpm build` on every PR so it can't silently break again.

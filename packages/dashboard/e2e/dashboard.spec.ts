@@ -13,6 +13,7 @@ function sampleTrace(over: Record<string, unknown>): Record<string, unknown> {
     promptTokens: 10,
     completionTokens: 5,
     totalTokens: 15,
+    costUsd: null,
     errorType: null,
     errorMessage: null,
     apiKeyHash: null,
@@ -32,9 +33,16 @@ function sampleTrace(over: Record<string, unknown>): Record<string, unknown> {
 }
 
 const traces = [
-  sampleTrace({ id: 'a', status: 200, cacheHit: true, judgeScore: 5 }),
-  sampleTrace({ id: 'b', status: 500, errorType: 'upstream_error' }),
-  sampleTrace({ id: 'c', status: 200, provider: 'groq', fallbackUsed: true, judgeScore: 3 }),
+  sampleTrace({ id: 'a', status: 200, cacheHit: true, judgeScore: 5, costUsd: 0.01 }),
+  sampleTrace({ id: 'b', status: 500, errorType: 'upstream_error', costUsd: 0.02 }),
+  sampleTrace({
+    id: 'c',
+    status: 200,
+    provider: 'groq',
+    fallbackUsed: true,
+    judgeScore: 3,
+    costUsd: 0.03,
+  }),
 ];
 
 test('renders aggregated stats from the trace API', async ({ page }) => {
@@ -54,4 +62,5 @@ test('renders aggregated stats from the trace API', async ({ page }) => {
   await expect(page.getByTitle('groq')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Recent requests' })).toBeVisible();
   await expect(page.getByTestId('stat-judge')).toContainText('4'); // mean of [5,3]
+  await expect(page.getByTestId('stat-cost')).toContainText('$0.05'); // 0.02 + 0.03 (cache hit excluded)
 });

@@ -10,6 +10,8 @@ export interface TimeBucket {
   count: number;
   tokens: number;
   errors: number;
+  /** Actual upstream spend in this window (USD; cache hits excluded). */
+  costUsd: number;
 }
 
 export interface ScoreBin {
@@ -26,6 +28,10 @@ export interface Stats {
   fallbacks: number;
   fallbackRate: number;
   totalTokens: number;
+  /** Actual upstream spend (USD) over non-cache-hit requests. */
+  totalCostUsd: number;
+  /** Spend avoided by cache hits (USD). */
+  savedCostUsd: number;
   avgLatencyMs: number;
   p95LatencyMs: number;
   judgeScoredCount: number;
@@ -49,6 +55,8 @@ export const EMPTY_STATS: Stats = {
   fallbacks: 0,
   fallbackRate: 0,
   totalTokens: 0,
+  totalCostUsd: 0,
+  savedCostUsd: 0,
   avgLatencyMs: 0,
   p95LatencyMs: 0,
   judgeScoredCount: 0,
@@ -97,6 +105,8 @@ export function computeStats(traces: TraceRecord[], bucketMs = 60_000): Stats {
   let cacheHits = 0;
   let fallbacks = 0;
   let totalTokens = 0;
+  let totalCostUsd = 0;
+  let savedCostUsd = 0;
   const latencies: number[] = [];
   const judgeScores: number[] = [];
   const histogram = new Map<number, number>([
@@ -114,6 +124,9 @@ export function computeStats(traces: TraceRecord[], bucketMs = 60_000): Stats {
     if (t.cacheHit) cacheHits++;
     if (t.fallbackUsed) fallbacks++;
     totalTokens += t.totalTokens ?? 0;
+    const cost = t.costUsd ?? 0;
+    if (t.cacheHit) savedCostUsd += cost;
+    else totalCostUsd += cost;
     latencies.push(t.durationMs);
     if (t.judgeScore !== null) {
       judgeScores.push(t.judgeScore);
@@ -121,9 +134,10 @@ export function computeStats(traces: TraceRecord[], bucketMs = 60_000): Stats {
       if (histogram.has(rounded)) histogram.set(rounded, (histogram.get(rounded) ?? 0) + 1);
     }
     const key = Math.floor(t.timestamp / bucketMs) * bucketMs;
-    const bucket = buckets.get(key) ?? { bucket: key, count: 0, tokens: 0, errors: 0 };
+    const bucket = buckets.get(key) ?? { bucket: key, count: 0, tokens: 0, errors: 0, costUsd: 0 };
     bucket.count++;
     bucket.tokens += t.totalTokens ?? 0;
+    if (!t.cacheHit) bucket.costUsd += cost;
     if (isError) bucket.errors++;
     buckets.set(key, bucket);
   }
@@ -143,6 +157,8 @@ export function computeStats(traces: TraceRecord[], bucketMs = 60_000): Stats {
     fallbacks,
     fallbackRate: fallbacks / total,
     totalTokens,
+    totalCostUsd: Math.round(totalCostUsd * 1e6) / 1e6,
+    savedCostUsd: Math.round(savedCostUsd * 1e6) / 1e6,
     avgLatencyMs: Math.round(avgLatency * 100) / 100,
     p95LatencyMs: Math.round(percentile(latencies, 95) * 100) / 100,
     judgeScoredCount: judgeScores.length,

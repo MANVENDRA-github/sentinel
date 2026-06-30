@@ -20,6 +20,7 @@ function record(id: string): TraceRecord {
     promptTokens: null,
     completionTokens: null,
     totalTokens: null,
+    costUsd: null,
     errorType: null,
     errorMessage: null,
     apiKeyHash: null,

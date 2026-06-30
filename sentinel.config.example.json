@@ -37,5 +37,10 @@
     "blocklist": ["ignore previous instructions"],
     "pii": ["pii.email", "pii.credit_card", "pii.ssn"],
     "requireJson": true
+  },
+  "pricing": {
+    "gpt-4o-mini": { "inputPer1k": 0.00015, "outputPer1k": 0.0006 },
+    "gemini-2.0-flash": { "inputPer1k": 0.0001, "outputPer1k": 0.0004 },
+    "llama-3.3-70b-versatile": { "inputPer1k": 0.00059, "outputPer1k": 0.00079 }
   }
 }

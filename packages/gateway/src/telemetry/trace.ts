@@ -14,6 +14,8 @@ export interface TraceRecord {
   promptTokens: number | null;
   completionTokens: number | null;
   totalTokens: number | null;
+  /** Estimated USD cost from token usage × the per-model price map (null = unpriced/unknown). */
+  costUsd: number | null;
   errorType: string | null;
   errorMessage: string | null;
   apiKeyHash: string | null;
@@ -105,6 +107,7 @@ export function spanToTraceRecord(span: ReadableSpan): TraceRecord {
     promptTokens: asNumber(attrs['gen_ai.usage.input_tokens']),
     completionTokens: asNumber(attrs['gen_ai.usage.output_tokens']),
     totalTokens: asNumber(attrs['gen_ai.usage.total_tokens']),
+    costUsd: asNumber(attrs['sentinel.cost_usd']),
     errorType: asString(attrs['error.type']),
     errorMessage: isError ? (span.status.message ?? null) : null,
     apiKeyHash: asString(attrs['sentinel.api_key_hash']),

@@ -15,6 +15,7 @@ export interface TraceRecord {
   promptTokens: number | null;
   completionTokens: number | null;
   totalTokens: number | null;
+  costUsd: number | null;
   errorType: string | null;
   errorMessage: string | null;
   apiKeyHash: string | null;
