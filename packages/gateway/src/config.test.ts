@@ -89,8 +89,8 @@ describe('loadConfig', () => {
   it('resolves providers, base URLs, and keys', () => {
     const cfg = loadConfig({ path: 'x', env, readFile: () => validConfig });
     expect(cfg.providers.get('ollama')?.baseUrl).toBe('http://localhost:11434/v1');
-    expect(cfg.providers.get('ollama')?.apiKey).toBeUndefined();
-    expect(cfg.providers.get('openai')?.apiKey).toBe('sk-test');
+    expect(cfg.providers.get('ollama')?.apiKeys).toEqual([]);
+    expect(cfg.providers.get('openai')?.apiKeys).toEqual(['sk-test']);
     expect(cfg.models.get('gpt-4o-mini')).toBe('openai');
     expect(cfg.defaultProvider).toBe('ollama');
   });
@@ -132,7 +132,27 @@ describe('loadConfig', () => {
       readFile: () => cfg,
     });
     expect(resolved.providers.get('claude')?.type).toBe('anthropic');
-    expect(resolved.providers.get('claude')?.apiKey).toBe('sk-ant');
+    expect(resolved.providers.get('claude')?.apiKeys).toEqual(['sk-ant']);
+  });
+
+  it('collects a round-robin key pool from apiKeyEnvs (+ apiKeyEnv), skipping unset keys', () => {
+    const cfg = JSON.stringify({
+      providers: {
+        groq: {
+          type: 'openai-compatible',
+          baseUrl: 'https://g',
+          apiKeyEnv: 'G1',
+          apiKeyEnvs: ['G2', 'G3'],
+        },
+      },
+      models: { m: 'groq' },
+    });
+    const resolved = loadConfig({
+      path: 'x',
+      env: { G1: 'k1', G2: 'k2', G3: '' }, // G3 empty → skipped
+      readFile: () => cfg,
+    });
+    expect(resolved.providers.get('groq')?.apiKeys).toEqual(['k1', 'k2']);
   });
 
   it('rejects an unknown provider adapter type', () => {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ChatCompletionRequest } from '../schemas.js';
-import type { FetchLike, Provider } from './types.js';
+import type { ApiKeySource, FetchLike, Provider } from './types.js';
 import { UpstreamError } from '../errors.js';
 
 /**
@@ -18,7 +18,8 @@ const DEFAULT_MAX_TOKENS = 4096;
 export interface AnthropicOptions {
   name: string;
   baseUrl: string;
-  apiKey?: string | undefined;
+  /** A fixed key, or a supplier that returns the next key (round-robin across a pool). */
+  apiKey?: ApiKeySource | undefined;
   /** Injectable fetch (defaults to global `fetch`); handy for tests. */
   fetchImpl?: FetchLike;
 }
@@ -50,8 +51,9 @@ export function createAnthropicProvider(options: AnthropicOptions): Provider {
       'content-type': 'application/json',
       'anthropic-version': ANTHROPIC_VERSION,
     };
-    if (options.apiKey !== undefined && options.apiKey.length > 0) {
-      headers['x-api-key'] = options.apiKey;
+    const key = typeof options.apiKey === 'function' ? options.apiKey() : options.apiKey;
+    if (key !== undefined && key.length > 0) {
+      headers['x-api-key'] = key;
     }
     return headers;
   }

@@ -12,6 +12,12 @@ export type FetchLike = (
   },
 ) => Promise<Response>;
 
+/**
+ * A provider API key: either a fixed string, or a supplier that returns the next
+ * key to use (so the registry can round-robin across a multi-key pool per call).
+ */
+export type ApiKeySource = string | (() => string | undefined);
+
 /** A provider Sentinel can forward chat-completion requests to. */
 export interface Provider {
   readonly name: string;

@@ -11,7 +11,7 @@ const config: ResolvedConfig = {
         name: 'ollama',
         type: 'openai-compatible',
         baseUrl: 'http://localhost:11434/v1',
-        apiKey: undefined,
+        apiKeys: [],
       },
     ],
     [
@@ -20,7 +20,7 @@ const config: ResolvedConfig = {
         name: 'openai',
         type: 'openai-compatible',
         baseUrl: 'https://api.openai.com/v1',
-        apiKey: 'k',
+        apiKeys: ['k'],
       },
     ],
   ]),
@@ -67,7 +67,10 @@ describe('createRegistry', () => {
   it('builds the Anthropic adapter for an anthropic-typed provider', async () => {
     const anthropicConfig: ResolvedConfig = {
       providers: new Map([
-        ['claude', { name: 'claude', type: 'anthropic', baseUrl: 'http://h/v1', apiKey: 'sk-ant' }],
+        [
+          'claude',
+          { name: 'claude', type: 'anthropic', baseUrl: 'http://h/v1', apiKeys: ['sk-ant'] },
+        ],
       ]),
       models: new Map([['claude-3-5-sonnet', 'claude']]),
       defaultProvider: undefined,
@@ -88,5 +91,54 @@ describe('createRegistry', () => {
     const call = fetchImpl.mock.calls[0]!;
     expect(call[0]).toContain('/messages');
     expect(call[1].headers['x-api-key']).toBe('sk-ant');
+  });
+
+  it('round-robins across a provider key pool on successive requests', async () => {
+    const pooled: ResolvedConfig = {
+      providers: new Map([
+        [
+          'groq',
+          {
+            name: 'groq',
+            type: 'openai-compatible',
+            baseUrl: 'http://h/v1',
+            apiKeys: ['k1', 'k2'],
+          },
+        ],
+      ]),
+      models: new Map([['m', 'groq']]),
+      defaultProvider: undefined,
+      pricing: new Map(),
+    };
+    const seen: (string | undefined)[] = [];
+    const fetchImpl = vi.fn(async (_url: string, init: { headers: Record<string, string> }) => {
+      seen.push(init.headers.authorization);
+      return Promise.resolve(new Response('{}', { status: 200 }));
+    });
+    const registry = createRegistry(pooled, { fetchImpl });
+    for (let i = 0; i < 3; i++) {
+      await registry.resolve('m').chat({ model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+    }
+    expect(seen).toEqual(['Bearer k1', 'Bearer k2', 'Bearer k1']);
+  });
+
+  it('uses no auth header for a keyless provider pool', async () => {
+    const keyless: ResolvedConfig = {
+      providers: new Map([
+        [
+          'ollama',
+          { name: 'ollama', type: 'openai-compatible', baseUrl: 'http://h/v1', apiKeys: [] },
+        ],
+      ]),
+      models: new Map([['m', 'ollama']]),
+      defaultProvider: undefined,
+      pricing: new Map(),
+    };
+    const fetchImpl = vi.fn(async (_url: string, _init: { headers: Record<string, string> }) =>
+      Promise.resolve(new Response('{}', { status: 200 })),
+    );
+    const registry = createRegistry(keyless, { fetchImpl });
+    await registry.resolve('m').chat({ model: 'm', messages: [{ role: 'user', content: 'hi' }] });
+    expect(fetchImpl.mock.calls[0]![1].headers.authorization).toBeUndefined();
   });
 });
