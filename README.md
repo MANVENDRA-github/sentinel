@@ -10,7 +10,7 @@ A self-hostable **verifying LLM gateway** — a drop-in, OpenAI-compatible proxy
 
 ## What it does
 
-A drop-in, OpenAI-compatible `POST /v1/chat/completions` endpoint (streaming and non-streaming) that authenticates callers, validates requests, and forwards them to **any OpenAI-compatible provider** you configure — OpenAI, Groq, Mistral, OpenRouter, DeepSeek, xAI, Google Gemini (via its OpenAI endpoint), or a local **Ollama** model. Point your existing OpenAI SDK at Sentinel by changing one line: the base URL.
+A drop-in, OpenAI-compatible `POST /v1/chat/completions` endpoint (streaming and non-streaming) that authenticates callers, validates requests, and forwards them to the provider you configure — **any OpenAI-compatible API** (OpenAI, Groq, Mistral, OpenRouter, DeepSeek, xAI, Google Gemini via its OpenAI endpoint, or a local **Ollama** model) or **Anthropic** via its native Messages API. Point your existing OpenAI SDK at Sentinel by changing one line: the base URL.
 
 ## Requirements
 
@@ -85,7 +85,7 @@ Each provider sets a `baseUrl` (or `baseUrlEnv` to read it from the environment)
 }
 ```
 
-A provider may also set an `rpm` (requests-per-minute) ceiling; the optional `routing` block configures cost-aware routing (see below). Because almost every provider speaks the OpenAI API, **bringing your own key is just config** — add a provider entry and a model route, drop the key in `.env`, done.
+A provider may also set an `rpm` (requests-per-minute) ceiling; the optional `routing` block configures cost-aware routing (see below). Because almost every provider speaks the OpenAI API, **bringing your own key is just config** — add a provider entry and a model route, drop the key in `.env`, done. **Anthropic** is supported natively too: set `"type": "anthropic"` on the provider and Sentinel translates to/from its Messages API (clients keep sending the OpenAI shape).
 
 ### Bring your own Ollama
 
@@ -163,7 +163,6 @@ Sentinel v0.1.0 is a **single-node, self-hosted** gateway. Honest boundaries tod
 - **SQLite (or in-memory) trace storage.** Ideal for single-node; a Postgres backend for multi-instance is planned.
 - **The async judge needs a local Ollama** with `JUDGE_MODEL` pulled. Without it, judging degrades to `unscored` (never a false pass). The bundled benchmarks run against **mock upstreams**, so the headline catch-rate is the _deterministic guardrail_ rate; the LLM judge is covered by unit tests.
 - **Inline guardrails apply to non-streaming responses.** Streamed responses are judged from their buffered output _after_ completion (inline blocking of a live stream is on the roadmap).
-- **Providers are OpenAI-compatible.** OpenAI, Groq, Gemini's OpenAI endpoint, Ollama, and other OpenAI-API providers work today; a native **Anthropic** (Messages API) adapter is planned.
 - **Per-request dollar cost requires a `pricing` map** in `sentinel.config.json` (USD per 1K tokens, per model). With it, every trace records a `costUsd` and the dashboard shows spend + cache savings; without it, cost is unknown (`null`) and only request-volume cache savings are visible.
 
 ## Development

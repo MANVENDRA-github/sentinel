@@ -115,6 +115,34 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ path: 'x', env, readFile: () => bad })).toThrow(ConfigError);
   });
 
+  it('resolves the anthropic provider adapter type', () => {
+    const cfg = JSON.stringify({
+      providers: {
+        claude: {
+          type: 'anthropic',
+          baseUrl: 'https://api.anthropic.com/v1',
+          apiKeyEnv: 'ANTHROPIC_API_KEY',
+        },
+      },
+      models: { 'claude-3-5-sonnet': 'claude' },
+    });
+    const resolved = loadConfig({
+      path: 'x',
+      env: { ANTHROPIC_API_KEY: 'sk-ant' },
+      readFile: () => cfg,
+    });
+    expect(resolved.providers.get('claude')?.type).toBe('anthropic');
+    expect(resolved.providers.get('claude')?.apiKey).toBe('sk-ant');
+  });
+
+  it('rejects an unknown provider adapter type', () => {
+    const bad = JSON.stringify({
+      providers: { p: { type: 'cohere', baseUrl: 'https://x' } },
+      models: {},
+    });
+    expect(() => loadConfig({ path: 'x', env, readFile: () => bad })).toThrow(ConfigError);
+  });
+
   it('throws on invalid JSON', () => {
     expect(() => loadConfig({ path: 'x', env, readFile: () => '{ not json' })).toThrow(ConfigError);
   });

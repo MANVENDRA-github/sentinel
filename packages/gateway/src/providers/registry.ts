@@ -1,6 +1,7 @@
 import type { ResolvedConfig } from '../config.js';
 import type { FetchLike, Provider } from './types.js';
 import { createOpenAICompatibleProvider } from './openai-compatible.js';
+import { createAnthropicProvider } from './anthropic.js';
 import { ModelNotFoundError } from '../errors.js';
 
 export interface ProviderRegistry {
@@ -19,14 +20,17 @@ export function createRegistry(
 ): ProviderRegistry {
   const providers = new Map<string, Provider>();
   for (const resolved of config.providers.values()) {
+    const adapterOptions = {
+      name: resolved.name,
+      baseUrl: resolved.baseUrl,
+      apiKey: resolved.apiKey,
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+    };
     providers.set(
       resolved.name,
-      createOpenAICompatibleProvider({
-        name: resolved.name,
-        baseUrl: resolved.baseUrl,
-        apiKey: resolved.apiKey,
-        ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
-      }),
+      resolved.type === 'anthropic'
+        ? createAnthropicProvider(adapterOptions)
+        : createOpenAICompatibleProvider(adapterOptions),
     );
   }
 

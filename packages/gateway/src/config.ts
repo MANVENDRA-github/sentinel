@@ -109,7 +109,7 @@ export function loadServerEnv(env: NodeJS.ProcessEnv): ServerEnv {
 
 const providerConfigSchema = z
   .object({
-    type: z.literal('openai-compatible'),
+    type: z.enum(['openai-compatible', 'anthropic']),
     baseUrl: z.string().url().optional(),
     baseUrlEnv: z.string().min(1).optional(),
     apiKeyEnv: z.string().min(1).optional(),
@@ -165,6 +165,8 @@ const sentinelConfigSchema = z
 
 export interface ResolvedProvider {
   name: string;
+  /** Which adapter serves this provider: a generic OpenAI-compatible HTTP API or Anthropic's Messages API. */
+  type: 'openai-compatible' | 'anthropic';
   baseUrl: string;
   apiKey: string | undefined;
   /** Per-provider requests-per-minute limit for the throttle (omitted = unlimited). */
@@ -229,7 +231,13 @@ export function loadConfig(options: LoadConfigOptions): ResolvedConfig {
   for (const [name, p] of Object.entries(parsed.data.providers)) {
     const baseUrl = p.baseUrl ?? readEnvOrThrow(options.env, p.baseUrlEnv, name);
     const apiKey = p.apiKeyEnv === undefined ? undefined : options.env[p.apiKeyEnv];
-    providers.set(name, { name, baseUrl, apiKey, ...(p.rpm !== undefined ? { rpm: p.rpm } : {}) });
+    providers.set(name, {
+      name,
+      type: p.type,
+      baseUrl,
+      apiKey,
+      ...(p.rpm !== undefined ? { rpm: p.rpm } : {}),
+    });
   }
 
   return {
