@@ -56,5 +56,6 @@ function matches(trace: TraceRecord, filter: TraceQuery): boolean {
     trace.promptFingerprint !== filter.promptFingerprint
   )
     return false;
+  if (filter.apiKeyHash !== undefined && trace.apiKeyHash !== filter.apiKeyHash) return false;
   return true;
 }

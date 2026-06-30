@@ -64,6 +64,7 @@ async function main(): Promise<void> {
     adminKey: env.adminKey,
     cache,
     pricing: config.pricing,
+    bufferStreamForGuardrails: env.guardrailsStreamBuffer,
     ...(clientThrottle ? { clientThrottle } : {}),
     routing: {
       config: config.routing,

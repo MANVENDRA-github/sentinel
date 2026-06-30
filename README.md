@@ -103,6 +103,8 @@ curl http://localhost:8080/traces \
 # filters: ?model=gpt-4o-mini&status=200&stream=true&since=<epoch-ms>&limit=50
 ```
 
+A client app can also read **only its own** traces — no admin key — at `GET /v1/traces` (and `/v1/traces/:id`), authenticated by its Sentinel API key and scoped server-side to that key.
+
 Traces are **metadata only** — no prompt or response bodies are stored, and API keys are recorded as a SHA-256 hash, never in the clear.
 
 ## Caching
@@ -115,7 +117,7 @@ Sentinel survives flaky providers and free-tier rate limits instead of passing t
 
 - **Retry + backoff + fallback.** A retryable failure (429, upstream 5xx, timeout, network fault) is retried with exponential backoff up to `MAX_RETRIES`, then **failed over** to the next candidate — additional models you list under `routing.fallback`, ending at a local Ollama model so a request can always be served. Terminal errors (400/401/403/404) fail fast without pointless fallback.
 - **Per-provider throttling.** A token-bucket limiter paces each provider to its configured `rpm` (or `DEFAULT_RPM`), waiting up to `THROTTLE_MAX_WAIT_MS` for headroom before skipping to a less-loaded candidate. This keeps you under a provider's limit rather than discovering it the hard way.
-- **Cost-aware routing (opt-in).** Send `"model": "auto"` and a rules-based classifier picks the **cheapest capable tier** from `routing.tiers` (cheapest first) by prompt complexity, escalating to more capable tiers on failure. Explicit model names behave exactly as before — plus the fallback chain. Drop-in semantics are preserved; nothing is configured by default.
+- **Cost-aware routing (opt-in).** Send `"model": "auto"` and a rules-based classifier picks the **cheapest capable tier** from `routing.tiers` (cheapest first) by prompt complexity, escalating to more capable tiers on failure. Explicit model names behave exactly as before — plus the fallback chain. Drop-in semantics are preserved; nothing is configured by default. The complexity boundaries between tiers are tunable via `routing.thresholds`.
 
 Every routed request records which provider/model actually served it, whether a fallback was used, and the retry count — queryable via `GET /traces?fallbackUsed=true` (and `?routedProvider=`). Streaming requests fail over up to the first chunk; once the SSE response is committed, a mid-stream error is surfaced as an inline event.
 
@@ -127,7 +129,7 @@ Sentinel can check a response's quality **in the request path**, not just after 
 - **Async LLM judge (sampled).** A fraction (`JUDGE_SAMPLE_RATE`) of responses are scored 1–5 with a short reason by a local Ollama model (`JUDGE_MODEL`), **out of band** — it never adds latency to the response. The response under review is wrapped as untrusted data so it can't talk the judge into a pass; a judge failure is recorded as "unscored", never a pass.
 - **Regression tracking.** Each request carries a model-independent **prompt fingerprint**, so `GET /regression` groups judge scores by `(prompt, model)` — compare the groups sharing a fingerprint to see how one prompt's quality differs across models or versions.
 
-Verdicts are queryable: `GET /traces?guardrailStatus=block`, `?judgeScoreMax=2`, `?promptFingerprint=…`. Inline guardrails apply to non-streaming responses; streamed responses are judged from their buffered output after they complete.
+Verdicts are queryable: `GET /traces?guardrailStatus=block`, `?judgeScoreMax=2`, `?promptFingerprint=…`. Inline guardrails apply to non-streaming responses by default; set `GUARDRAILS_STREAM_BUFFER=true` to buffer a streamed response and apply guardrails (including a 422 block) **before any bytes are sent** — otherwise streamed output is judged asynchronously after it completes.
 
 ## Dashboard
 
@@ -161,8 +163,8 @@ Sentinel v0.1.0 is a **single-node, self-hosted** gateway. Honest boundaries tod
 
 - **In-memory cache & rate-limit state.** The semantic cache and token buckets live in-process — not shared across instances, and cleared on restart. A Redis-backed swap is planned behind the existing interfaces.
 - **SQLite (or in-memory) trace storage.** Ideal for single-node; a Postgres backend for multi-instance is planned.
-- **The async judge needs a local Ollama** with `JUDGE_MODEL` pulled. Without it, judging degrades to `unscored` (never a false pass). The bundled benchmarks run against **mock upstreams**, so the headline catch-rate is the _deterministic guardrail_ rate; the LLM judge is covered by unit tests.
-- **Inline guardrails apply to non-streaming responses.** Streamed responses are judged from their buffered output _after_ completion (inline blocking of a live stream is on the roadmap).
+- **The async judge needs a local Ollama** with `JUDGE_MODEL` pulled. Without it, judging degrades to `unscored` (never a false pass). The bundled benchmarks run against **mock upstreams**, so the headline catch-rate is the _deterministic guardrail_ rate; the LLM judge is covered by unit tests and a real run is captured in [`docs/EVIDENCE.md`](./docs/EVIDENCE.md).
+- **Inline guardrails run inline on non-streaming responses.** Streamed responses enforce guardrails only with `GUARDRAILS_STREAM_BUFFER=true` (which buffers the full response first, trading first-byte latency); otherwise they're judged asynchronously after completion.
 - **Per-request dollar cost requires a `pricing` map** in `sentinel.config.json` (USD per 1K tokens, per model). With it, every trace records a `costUsd` and the dashboard shows spend + cache savings; without it, cost is unknown (`null`) and only request-volume cache savings are visible.
 
 ## Development

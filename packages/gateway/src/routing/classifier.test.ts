@@ -34,4 +34,10 @@ describe('classifyTier', () => {
     };
     expect(classifyTier(request, 3)).toBe(0);
   });
+
+  it('honours custom thresholds over the defaults', () => {
+    // 'hello world' (11 chars) + 1 message × 100 = score 111.
+    expect(classifyTier(reqOf('hello world'), 3, [10, 20])).toBe(2); // low bars → top tier
+    expect(classifyTier(reqOf('hello world'), 3, [100_000])).toBe(0); // high bar → cheapest
+  });
 });

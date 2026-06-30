@@ -37,7 +37,8 @@
   "defaultProvider": "ollama",
   "routing": {
     "tiers": ["llama3.2", "gpt-4o-mini", "llama-3.3-70b-versatile"],
-    "fallback": ["llama3.2"]
+    "fallback": ["llama3.2"],
+    "thresholds": [400, 2000, 8000, 32000]
   },
   "guardrails": {
     "blocklist": ["ignore previous instructions"],
