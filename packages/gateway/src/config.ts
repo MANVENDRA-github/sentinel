@@ -24,6 +24,7 @@ export interface ServerEnv {
   throttleMaxWaitMs: number;
   verifyEnabled: boolean;
   guardrailsBlock: boolean;
+  guardrailsStreamBuffer: boolean;
   judgeEnabled: boolean;
   judgeModel: string;
   judgeSampleRate: number;
@@ -55,6 +56,10 @@ const serverEnvSchema = z.object({
     .default('false')
     .transform((v) => v === 'true'),
   GUARDRAILS_BLOCK: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((v) => v === 'true'),
+  GUARDRAILS_STREAM_BUFFER: z
     .enum(['true', 'false'])
     .default('false')
     .transform((v) => v === 'true'),
@@ -98,6 +103,7 @@ export function loadServerEnv(env: NodeJS.ProcessEnv): ServerEnv {
     throttleMaxWaitMs: parsed.data.THROTTLE_MAX_WAIT_MS,
     verifyEnabled: parsed.data.VERIFY_ENABLED,
     guardrailsBlock: parsed.data.GUARDRAILS_BLOCK,
+    guardrailsStreamBuffer: parsed.data.GUARDRAILS_STREAM_BUFFER,
     judgeEnabled: parsed.data.JUDGE_ENABLED,
     judgeModel: parsed.data.JUDGE_MODEL,
     judgeSampleRate: parsed.data.JUDGE_SAMPLE_RATE,
@@ -124,6 +130,7 @@ const providerConfigSchema = z
 const routingConfigSchema = z.object({
   tiers: z.array(z.string().min(1)).optional(),
   fallback: z.array(z.string().min(1)).optional(),
+  thresholds: z.array(z.number().int().nonnegative()).optional(),
 });
 
 const guardrailsConfigSchema = z.object({
@@ -180,6 +187,8 @@ export interface ResolvedProvider {
 export interface ResolvedRouting {
   tiers?: string[] | undefined;
   fallback?: string[] | undefined;
+  /** Complexity score boundaries between `auto` tiers (defaults applied when omitted). */
+  thresholds?: number[] | undefined;
 }
 
 /** Guardrail policy (content blocklist + PII categories) from the config file. */

@@ -11,6 +11,9 @@ All notable changes to Sentinel are documented here. The format follows
 - Per-request **cost tracking**: set a `pricing` map (USD per 1K tokens, per model) in `sentinel.config.json` and every trace records a `costUsd`; the dashboard shows total spend, spend saved by the cache, and cost over time.
 - **Native Anthropic provider**: set `"type": "anthropic"` on a provider and Sentinel speaks Anthropic's Messages API (`x-api-key`, request/response/stream translation) while clients keep using the OpenAI shape.
 - **Multi-key round-robin**: a provider can list `apiKeyEnvs` (a key pool); Sentinel rotates across the keys per request to spread load and survive free-tier rate limits.
+- **Per-key trace isolation**: a client reads only its own traces via `GET /v1/traces` (+ `/v1/traces/:id`), authenticated by its Sentinel key; the admin `GET /traces` still sees everything.
+- **Opt-in inline guardrails on streaming**: `GUARDRAILS_STREAM_BUFFER=true` buffers a streamed response and applies guardrails (including a 422 block) before any bytes are sent.
+- **Configurable routing thresholds**: the `auto` complexity boundaries are tunable via `routing.thresholds`.
 
 ### Fixed
 

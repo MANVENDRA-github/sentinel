@@ -64,6 +64,8 @@ export interface TraceQuery {
   judgeScoreMin?: number;
   judgeScoreMax?: number;
   promptFingerprint?: string;
+  /** Restrict to one client's traces (by API-key hash) — used by the self-scoped read API. */
+  apiKeyHash?: string;
   limit?: number;
   offset?: number;
 }

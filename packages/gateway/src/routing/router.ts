@@ -16,6 +16,8 @@ export interface RoutingConfig {
   tiers?: string[] | undefined;
   /** Models appended as fallbacks to every request's candidate chain. */
   fallback?: string[] | undefined;
+  /** Complexity score boundaries between tiers (defaults applied when omitted). */
+  thresholds?: number[] | undefined;
 }
 
 export interface Router {
@@ -44,7 +46,7 @@ export function createRouter(options: CreateRouterOptions): Router {
       let names: string[];
       if (requested === 'auto') {
         if (tiers.length === 0) throw new ModelNotFoundError('auto');
-        const index = classifyTier(request, tiers.length);
+        const index = classifyTier(request, tiers.length, options.routing?.thresholds);
         names = [...tiers.slice(index), ...fallback];
       } else {
         names = [requested, ...fallback];

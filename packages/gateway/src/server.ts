@@ -52,6 +52,8 @@ export interface ServerDeps {
   verifier?: Verifier | undefined;
   /** model → USD-per-1K-token pricing, for per-request cost attribution on the trace. */
   pricing?: ReadonlyMap<string, ModelPricing> | undefined;
+  /** When true (with a verifier), buffer streaming responses and run inline guardrails before sending. */
+  bufferStreamForGuardrails?: boolean | undefined;
   /** Per-API-key inbound rate-limit buckets (built from CLIENT_RPM). */
   clientThrottle?: BucketRegistry | undefined;
   logger?: FastifyServerOptions['logger'];
@@ -321,6 +323,39 @@ export function buildServer(deps: ServerDeps) {
         span?.setAttribute('sentinel.prompt_fingerprint', deps.verifier.fingerprint(chatRequest));
       }
 
+      // Opt-in: buffer the whole stream, run inline guardrails on the assembled text, and
+      // block (422) before any bytes are sent — trading streaming latency for inline
+      // enforcement. Off by default; the live path below preserves first-byte latency.
+      if (deps.bufferStreamForGuardrails && deps.verifier !== undefined) {
+        const collected: string[] = [];
+        for (let step = first; step.done !== true; step = await iterator.next()) {
+          collected.push(step.value);
+        }
+        const text = extractStreamText(collected);
+        const verdict = deps.verifier.inspect(chatRequest, text);
+        span?.setAttribute('sentinel.guardrail_status', verdict.status);
+        if (verdict.violations.length > 0) {
+          span?.setAttribute('sentinel.guardrail_violations', verdict.violations.join(','));
+        }
+        if (verdict.status === 'block') {
+          throw new GuardrailBlockedError(verdict.violations); // nothing sent yet → clean 422
+        }
+        reply.hijack();
+        reply.raw.writeHead(200, SSE_HEADERS);
+        for (const chunk of collected) reply.raw.write(`data: ${chunk}\n\n`);
+        reply.raw.write('data: [DONE]\n\n');
+        reply.raw.end();
+        span?.setAttribute('sentinel.cache_hit', false);
+        endSpan(request, 200);
+        if (deps.cache !== undefined && apiKeyHash !== null) {
+          await deps.cache.set(chatRequest, apiKeyHash, { kind: 'stream', chunks: collected });
+        }
+        if (span !== undefined) {
+          deps.verifier.scheduleJudge(span.spanContext().spanId, chatRequest, text);
+        }
+        return reply;
+      }
+
       reply.hijack();
       reply.raw.writeHead(200, SSE_HEADERS);
 
@@ -357,7 +392,11 @@ export function buildServer(deps: ServerDeps) {
     },
   );
 
-  app.register(traceRoutes, { traceStore: deps.traceStore, adminKey: deps.adminKey });
+  app.register(traceRoutes, {
+    traceStore: deps.traceStore,
+    adminKey: deps.adminKey,
+    apiKeys: deps.apiKeys,
+  });
   app.register(regressionRoutes, { traceStore: deps.traceStore, adminKey: deps.adminKey });
 
   return app;

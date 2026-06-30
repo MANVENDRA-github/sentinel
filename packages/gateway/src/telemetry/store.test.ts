@@ -163,6 +163,15 @@ for (const [name, makeStore] of backends) {
       expect(store.get('free')?.costUsd).toBeNull();
       store.close();
     });
+
+    it('filters by apiKeyHash (per-key trace isolation)', () => {
+      const store = makeStore();
+      store.record(sample({ id: 'k1', apiKeyHash: 'aaa' }));
+      store.record(sample({ id: 'k2', apiKeyHash: 'bbb' }));
+      expect(store.query({ apiKeyHash: 'aaa' }).map((t) => t.id)).toEqual(['k1']);
+      expect(store.query({ apiKeyHash: 'bbb' }).map((t) => t.id)).toEqual(['k2']);
+      store.close();
+    });
   });
 }
 

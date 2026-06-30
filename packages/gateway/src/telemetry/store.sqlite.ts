@@ -37,6 +37,7 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_traces_fallback_used ON traces (fallback_used);
   CREATE INDEX IF NOT EXISTS idx_traces_guardrail_status ON traces (guardrail_status);
   CREATE INDEX IF NOT EXISTS idx_traces_prompt_fingerprint ON traces (prompt_fingerprint);
+  CREATE INDEX IF NOT EXISTS idx_traces_api_key_hash ON traces (api_key_hash);
 `;
 
 interface TraceRow {
@@ -201,6 +202,10 @@ export class SqliteTraceStore implements TraceStore {
     if (filter.promptFingerprint !== undefined) {
       where.push('prompt_fingerprint = @promptFingerprint');
       params.promptFingerprint = filter.promptFingerprint;
+    }
+    if (filter.apiKeyHash !== undefined) {
+      where.push('api_key_hash = @apiKeyHash');
+      params.apiKeyHash = filter.apiKeyHash;
     }
     params.limit = filter.limit ?? 50;
     params.offset = filter.offset ?? 0;

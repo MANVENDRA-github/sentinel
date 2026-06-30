@@ -888,3 +888,50 @@ describe('semantic cache', () => {
     await app.close();
   });
 });
+
+describe('streaming guardrails (buffered, opt-in)', () => {
+  const buffered = (chunks: string[], block: boolean) => {
+    const store = new InMemoryTraceStore();
+    const provider = makeProvider({
+      chatStream: async function* () {
+        for (const c of chunks) yield c;
+      },
+    });
+    return buildServer({
+      registry: makeRegistry(provider),
+      apiKeys: new Set(['good']),
+      logger: false,
+      traceStore: store,
+      verifier: createVerifier({ store, guardrails: { block } }),
+      bufferStreamForGuardrails: true,
+    });
+  };
+
+  it('blocks a violating streamed response with 422 before sending any bytes', async () => {
+    const app = buffered(['{"choices":[{"delta":{"content":"reach me at a@b.com"}}]}'], true);
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, stream: true },
+    });
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.type).toBe('guardrail_blocked');
+    await app.close();
+  });
+
+  it('streams a clean buffered response through to [DONE]', async () => {
+    const app = buffered(['{"choices":[{"delta":{"content":"all good here"}}]}'], true);
+    const res = await app.inject({
+      method: 'POST',
+      url,
+      headers: auth,
+      payload: { ...body, stream: true },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toContain('text/event-stream');
+    expect(res.body).toContain('all good here');
+    expect(res.body).toContain('data: [DONE]');
+    await app.close();
+  });
+});
